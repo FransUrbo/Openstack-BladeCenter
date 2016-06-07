@@ -1,0 +1,8 @@
+[user]
+	email = turbo@bayour.com
+	name = Turbo Fredriksson
+[github]
+	user = turbo@bayour.com
+	token = secrettoken
+[alias]
+	dfw = diff --ignore-space-change --color

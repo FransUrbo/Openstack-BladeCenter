@@ -1,0 +1,69 @@
+#!/bin/sh
+
+set -x
+cd /
+
+# Get repository keys
+apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 8E234FB17DFFA34D # Turbo Fredriksson
+apt-key adv --keyserver keyserver.ubuntu.com --recv-keys FADD8D64B1275EA3 # HPE
+
+apt-get update
+
+apt-get -y dist-upgrade
+
+do_install() {
+    apt-get -y --no-install-recommends install $*
+}
+
+hostname="$(cat /etc/hostname)"
+if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
+   # A blade!
+   do_install hp-snmp-agents hponcfg
+
+   nr="$(echo "${hostname}" | sed -e 's@.*blade[A-Z]@@i' -e 's@^0@@' -e 's@[a-z]$@@')"
+   if [ "${nr}" -ge "3" ]; then
+       # A compute node!
+
+       # Seed Openstack etc
+#       curl http://localserver/debconf_openstack-compute.txt | \
+#           sed "s@10\.0\.4\.1@${ip}@" | \
+#           debconf-set-selections
+
+       do_install nova-compute-kvm nova-console nova-scheduler nova-volume
+   else
+       # Get IP of this host
+       iface="$(/sbin/ifconfig | grep "^eth" | sed 's@ .*@@')"
+       set -- $(/sbin/ifconfig "${iface}" | grep ' inet ')
+       ip="$(echo "${2}" | sed 's@.*:@@')"
+
+       # Seed Openstack etc
+       curl http://localserver/debconf_openstack-server.txt | \
+           sed "s@10\.0\.4\.1@${ip}@" | \
+           debconf-set-selections
+
+       # Install core database packages first
+       do_install mysql-server-5.6 rabbitmq-server mongodb-server memcached
+       rabbitmqctl add_user openstack r00tme
+
+       # Install Openstack Authentication server
+       do_install keystone
+
+       # Install Openstack services.
+       do_install barbican-api barbican-keystone-listener barbican-worker ceilometer-agent-central \
+           ceilometer-agent-compute ceilometer-agent-ipmi ceilometer-agent-notification \
+           ceilometer-alarm-notifier ceilometer-api ceilometer-collector cinder-api \
+           cinder-backup cinder-scheduler cinder-volume designate designate-agent \
+           designate-api designate-central designate-mdns designate-pool-manager \
+           designate-sink designate-zone-manager glance glance-api glance-glare \
+           glance-registry glances heat-api heat-engine ironic-api ironic-conductor \
+           ironic-fa-deploy ironic-inspector manila-api manila-scheduler manila-share \
+           mistral-api mistral-engine mistral-executor murano-api murano-engine \
+           neutron-server senlin-api senlin-engine zaqar-server 
+
+       # Get and patch the etc directory.
+       curl http://localserver/openstack-server.patch | patch -p1
+   fi
+fi
+
+apt-get -y autoremove
+apt-get -y clean

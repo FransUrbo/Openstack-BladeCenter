@@ -1,0 +1,19 @@
+# To reload this file, execute the following command string:
+# Ctrl-o : source .screenrc
+
+scrollback 10000
+
+# extra long break (10*0.25sec) for sun
+# Ctrl-o B
+#bind B break 10
+
+defscrollback 5000
+startup_message off
+escape ^Oa
+termcapinfo xterm ti@:te@
+
+# http://superuser.com/questions/180148/how-do-you-get-screen-to-automatically-connect-to-the-current-ssh-agent-when-re-a
+setenv SSH_AUTH_SOCK $HOME/.ssh/ssh_auth_sock
+
+caption    always         "%n%{kw}%{+b} %t%{ww}"
+hardstatus alwayslastline "%{gk}%c %{yk}%d/%m-%y%{kk} %{y}%86=Load: %l"

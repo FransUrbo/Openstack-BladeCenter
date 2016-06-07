@@ -1,0 +1,52 @@
+apt-get install autotools-dev comerr-dev dpkg-dev e2fslibs-dev \
+	libacl1-dev libapparmor-dev libasound2-dev:amd64 libatk1.0-dev \
+	libattr1-dev:amd64 libaudio-dev:amd64 libavahi-client-dev \
+	libavahi-common-dev libavahi-core-dev libbison-dev:amd64 libblkid-dev \
+	libbogl-dev libburn-dev libbz2-dev:amd64 libc-dev-bin libc6-dev:amd64 \
+	libc6-dev-i386 libcaca-dev libcap-dev:amd64 libdb-dev:amd64 \
+	libdb5.1-dev libdbus-1-dev libdbus-glib-1-dev libdebconfclient0-dev \
+	libdebian-installer4-dev libdevmapper-dev libdirectfb-dev libelf-dev \
+	libevent-dev libexpat1-dev libfreetype6-dev libfuse-dev \
+	libgcrypt11-dev libgeoip-dev libgl1-mesa-dev libglib2.0-dev \
+	libglu1-mesa-dev libgpg-error-dev libgpgme11-dev libgtest-dev \
+	libice-dev:amd64 libidn11-dev libisofs-dev libjpeg8-dev:amd64 \
+	libjte-dev liblcms1-dev:amd64 libldap2-dev:amd64 libltdl-dev:amd64 \
+	liblua5.2-dev:amd64 liblzma-dev:amd64 libmp3lame-dev:amd64 \
+	libmysqlclient-dev libncurses5-dev libnewt-dev:amd64 libogg-dev:amd64 \
+	libopts25-dev libp11-kit-dev libparted0-dev libpcre3-dev libperl-dev \
+	libpng12-dev libpth-dev libpthread-stubs0-dev:amd64 libpulse-dev:amd64 \
+	libqt4-dev libqt4-dev-bin libqt4-opengl-dev libqtwebkit-dev \
+	libreadline-dev:amd64 libreadline6-dev:amd64 libsasl2-dev \
+	libsdl1.2-dev libselinux1-dev libsepol1-dev \
+	libslang2-dev:amd64 libslp-dev libsm-dev:amd64 libssh2-1-dev \
+	libssl-dev libstdc++6-4.7-dev libtasn1-3-dev libtinfo-dev:amd64 \
+	libts-dev:amd64 libusb-dev libvorbis-dev:amd64 libvorbisidec-dev \
+	libwrap0-dev:amd64 libx11-dev:amd64 libx264-dev:amd64 libxau-dev:amd64 \
+	libxcb1-dev:amd64 libxcursor-dev:amd64 libxdmcp-dev:amd64 libxen-dev \
+	libxext-dev:amd64 libxfixes-dev libxi-dev libxinerama-dev:amd64 \
+	libxml2-dev:amd64 libxmu-dev:amd64 libxrandr-dev libxrender-dev:amd64 \
+	libxslt1-dev libxt-dev:amd64 libxvidcore-dev:amd64 libzfs-dev \
+	linux-libc-dev:amd64 manpages-dev mesa-common-dev python-dbus-dev \
+	python-dev python2.7-dev python3-dev python3.2-dev ruby1.8-dev \
+	systemtap-sdt-dev unixodbc-dev uuid-dev x11proto-core-dev \
+	x11proto-fixes-dev x11proto-input-dev x11proto-kb-dev \
+	x11proto-randr-dev x11proto-render-dev x11proto-xext-dev \
+	x11proto-xinerama-dev xtrans-dev xutils-dev zlib1g-dev:amd64 gcc \
+	gcc-4.4 gcc-4.4-base:amd64 gcc-4.4-doc gcc-4.4-multilib gcc-4.6 \
+	gcc-4.6-base:amd64 gcc-4.6-doc gcc-4.6-multilib gcc-4.7 \
+	gcc-4.7-base:amd64 gcc-4.7-doc gcc-4.7-multilib gcc-doc-base lib32gcc1 \
+	libgcc1:amd64 make git git-buildpackage git-email git-man \
+        debhelper build-essential:native autoconf autogen automake libtool \
+        dupload quilt fakeroot dkms
+
+cd /usr/src
+
+for repo in git@github.com:zfsonlinux/debian-installers.git \
+	git@github.com:zfsonlinux/grub.git git@github.com:zfsonlinux/pkg-spl.git  \
+	git@github.com:zfsonlinux/pkg-zfs.git git@github.com:zfsonlinux/spl.git \
+	git@github.com:zfsonlinux/zfs.git git@github.com:zfsonlinux/zfs-test.git \
+	git@github.com:FransUrbo/scst.git git@github.com:FransUrbo/scst_svn.git \
+	https://github.com/illumos/illumos-gate.git; do
+        git clone $repo
+done
+
