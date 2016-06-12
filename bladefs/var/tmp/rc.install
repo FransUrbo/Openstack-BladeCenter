@@ -1,0 +1,217 @@
+#!/bin/sh
+
+# PXE auto installer - PART TWO
+
+# We're going to need MySQL etc, etc be up and running
+# to be able to do the install, so this needs to be run
+# in the real FS after the D-I install.
+
+do_install() {
+    apt-get -y --no-install-recommends install $*
+}
+
+get_debconf_passwd () {
+    debconf-get-selections | \
+        egrep "^${1}[ $(printf '\t')].*${2}" | \
+        sed 's@.*[ \t]@@'
+}
+
+set -ex
+
+LOCALSERVER="localserver"
+LOGFILE="/var/tmp/rc.install.log"
+[ -z "${DEBIAN_FRONTEND}" ] && DEBIAN_FRONTEND="noninteractive"
+[ -z "${SQLDB}" ] && SQLDB="mysql" # mariadb - !!DOES NOT WORK!!
+export LOCALSERVER LOGFILE DEBIAN_FRONTEND SQLDB
+
+[ -f "/var/tmp/rc.install.done" ] && exit 0
+
+# Need to wait for the interface to come up.
+while ! ping -c1 ftp.uk.debian.org > /dev/null 2>&1; do sleep 5; done
+
+exec 1<&-		# Close STDOUT file descriptor
+exec 2<&-		# Close STDERR file descriptor
+exec 1<>$LOGFILE	# Open STDOUT as $LOGFILE file for read and write.
+exec 2>&1		# Redirect STDERR to STDOUT
+
+chmod 0600 /var/tmp/rc.install.log
+
+# Get IP of this host
+set -- $(/sbin/ip address | egrep " eth.* UP ")
+iface="$(echo "${2}" | sed 's@:@@')"
+set -- $(/sbin/ifconfig "${iface}" | grep ' inet ')
+ip="$(echo "${2}" | sed 's@.*:@@')"
+
+hostname="$(cat /etc/hostname)"
+nr="$(echo "${hostname}" | \
+    sed -e 's@.*blade[A-Z]@@i' -e 's@^0@@' -e 's@[a-z]$@@')"
+if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
+    # => A Compute node!
+    echo
+
+    # Preseed debconf
+    curl -s http://${LOCALSERVER}/PXEBoot/debconf_openstack-compute.txt | \
+        sed "s@10\.0\.4\.3@${ip}@" | \
+        debconf-set-selections
+
+    # Install the SQL clients
+    if [ "${SQLDB}" = "mysql" ]; then
+        do_install mysql-client-5.6
+    else
+        do_install mariadb-client-10.0
+    fi
+
+    # Properly seed dbconfig - It's not enough to just have it in the dbconf
+    # db, we also need to create the config files.
+    for app in magnum nova; do
+        pass="$(get_debconf_passwd "${app}-common" "/mysql/app-pass")"
+        curl -s http://${LOCALSERVER}/PXEBoot/dbconfig-common-template.conf | \
+            sed -e "s@%APP%@${app}@" -e "s@%PASS%@${pass}@" -e "s@%PKG%@${app}-common@" > \
+            "/etc/dbconfig-common/${app}-common.conf"
+    done
+
+    # Install the Compute packages
+    do_install nova-compute-kvm nova-console magnum-conductor docker
+
+#    # Prepare for Nova/docker
+#    usermod -aG docker nova
+#    service openstack-nova-compute restart
+#
+#    # Install Nova/docker
+#    cd /tmp
+#    pip install -e git+https://github.com/stackforge/nova-docker#egg=novadocker
+#    cd src/novadocker/
+#    python setup.py install
+#
+#    # Update Nova config
+#    sed -i "s@^#compute_driver.*@compute_driver = novadocker.virt.docker.DockerDriver@" /etc/nova/nova.conf
+#    mkdir -p /etc/nova/rootwrap.d
+#    cat <<EOF > docker.filters
+## nova-rootwrap command filters for setting up network in the docker driver
+## This file should be owned by (and only-writeable by) the root user
+#
+#[Filters]
+## nova/virt/docker/driver.py: 'ln', '-sf', '/var/run/netns/.*'
+#ln: CommandFilter, /bin/ln, root
+#EOF
+
+    # Update 
+#    sed -i "s@^#container_formats\(.*\)@\1,docker@" /etc/glance/glance.conf
+elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
+    # => A Control node
+
+    # Preseed debconf
+    curl -s http://${LOCALSERVER}/PXEBoot/debconf_openstack-control.txt | \
+        sed "s@10\.0\.4\.1@${ip}@" | \
+        debconf-set-selections
+
+    # Install core database packages first
+    [ "${SQLDB}" = "mysql" ] && \
+        server="mysql-server-5.6" || \
+        server="mariadb-server-10.0"
+    do_install "${server}" rabbitmq-server mongodb-server memcached
+
+    # Create RabbitMQ user
+    pass="$(get_debconf_passwd "barbican-common" "/rabbit_password")"
+    rabbitmqctl add_user openstack "${pass}"
+    rabbitmqctl set_permissions -p / openstack ".*" ".*" ".*"
+
+    # Make SQL server bind to *
+    [ "${SQLDB}" = "mysql" ] && \
+        cfg="/etc/mysql/mysql.conf.d/mysqld.cnf" || \
+        cfg="/etc/mysql/mariadb.conf.d/50-server.cnf"
+    sed -i "s@^bind-address[ \t].*@bind-address	= 0.0.0.0@" "${cfg}"
+    /etc/init.d/mysql restart
+
+    # Seed the SQL database
+    user="$(grep ^user /etc/mysql/debian.cnf | tail -n1 | sed 's@.* @@')"
+    pass="$(grep ^password /etc/mysql/debian.cnf | tail -n1 | sed 's@.* @@')"
+    curl -s http://${LOCALSERVER}/PXEBoot/blade-users.sql-${SQLDB} | \
+        mysql -hlocalhost -u"${user}" -p"${pass}" mysql
+
+    # Properly seed dbconfig - It's not enough to just have it in the dbconf
+    # db, we also need to create the config files.
+    for app in barbican cinder designate glance heat ironic magnum manila \
+        mistral murano neutron nova-api nova senlin keystone
+    do
+        if [ "${app}" = "keystone" -o "${app}" = "nova-api" ]; then
+            pkg="${app}"
+        else
+            pkg="${app}-common"
+        fi
+        pass="$(get_debconf_passwd "${pkg}" "/mysql/app-pass")"
+        curl -s http://${LOCALSERVER}/PXEBoot/dbconfig-common-template.conf | \
+            sed -e "s@%APP%@${app}@" -e "s@%PASS%@${pass}@" \
+            -e "s@%PKG%@${pkg}@" > "/etc/dbconfig-common/${pkg}.conf"
+    done
+
+    # Install Openstack Authentication server and the 'openstack' script.
+    do_install keystone python-openstackclient
+
+    # ======================================================================
+
+    # Setup a API package list variable
+    APIs=""
+    for api in barbican-api ceilometer-api cinder-api designate-api \
+        glance-api heat-api ironic-api manila-api mistral-api murano-api \
+        senlin-api nova-api magnum-api magnum-conductor
+    do
+        APIs="${APIs}${api} "
+    done
+
+    # Setup Engine/Server package list variable
+    ENGINEs=""
+    for engine in heat-engine mistral-engine murano-engine senlin-engine \
+        neutron-server zaqar-server
+    do
+        ENGINEs="${ENGINEs}${engine} "
+    done
+
+    # Setup Schedulre package list variable
+    SCHEDULERs=""
+    for scheduler in cinder-scheduler manila-scheduler nova-scheduler
+    do
+        SCHEDULERs="${SCHEDULERs}${scheduler} "
+    done
+
+    # Install Openstack services.
+    # fuel-agent fuel-ha-utils fuel-library fuel-migrate fuel-misc \
+    # fuel-nailgun-agent fuel-notify fuel-rabbit-fence fuel-umm \
+    # fuel-web-apache docker
+    do_install "${APIs}" "${ENGINEs}" "${SCHEDULERs}" \
+        barbican-keystone-listener barbican-worker ceilometer-agent-compute \
+        ceilometer-agent-ipmi ceilometer-agent-notification \
+        ceilometer-alarm-notifier ceilometer-collector \
+        ceilometer-agent-central cinder-backup cinder-volume designate \
+        designate-agent designate-central designate-mdns \
+        designate-pool-manager designate-sink designate-zone-manager \
+        glance glance-glare glance-registry glances ironic-conductor \
+        ironic-fa-deploy ironic-inspector manila-share \
+        mistral-executor nova-volume  
+
+    # Patch the etc directory.
+    sed -i "s@^#driver_handles_share_servers.*@driver_handles_share_servers = True@" /etc/manila/manila.conf
+    sed -i "s@^#service_instance_user.*@service_instance_user = True@" /etc/manila/manila.conf
+    for init in /etc/init.d/manila-*; do $init restart; done
+
+    sed -i "s@^enabled_apis = ec2,osapi_compute,metadata@enabled_apis = osapi_compute,metadata@" /etc/nova/nova.conf
+    sed -i "s@^#use_neutron =.*@use_neutron = True@" /etc/nova/nova.conf
+    for init in /etc/init.d/nova-*; do $init restart; done
+
+    sed -i "s@^#database = zaqar@database = zaqar@" /etc/zaqar/zaqar.conf
+    sed -i "s@^#unreliable = false@unreliable = True@" /etc/zaqar/zaqar.conf
+    sed -i "s@^#bind = .*@bind = ${ip}@" /etc/zaqar/zaqar.conf
+    /etc/init.d/zaqar-server restart
+
+    # Get the Openstack RC file.
+    cd /root
+    curl -s http://${LOCALSERVER}/PXEBoot/admin-openrc > admin-openrc
+fi
+
+apt-get -y autoremove
+apt-get clean
+
+sed -i "s@^\(sh /var/tmp/rc\.install\)\$@#\1@" /etc/rc.local
+touch /var/tmp/rc.install.done
+
+echo "=> W E ' R E   A L L   D O N E :" $(date) " <="
