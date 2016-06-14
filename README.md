@@ -28,6 +28,9 @@ In order of appearance:
     This is the primary installer script. That's
     where all the "magic" happens.
 
+  This filesystem is tar'ed down into the file
+  called "new_blade.tgz" in the scripts.
+
 * blade-users.sql
   Script to setup remote access to the MySQL server
   running on the control node(s).
