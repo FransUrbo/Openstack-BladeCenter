@@ -1,8 +1,8 @@
-magnum-common	magnum-common/app-password-confirm	password	
+magnum-common	magnum-common/app-password-confirm	password	secret9
 magnum-common	magnum-common/database-type	select	mysql
-magnum-common	magnum-common/db/app-user	string	magnum-common
+magnum-common	magnum-common/db/app-user	string	magnum
 magnum-common	magnum-common/db/basepath	string	/var/lib/openstack/magnum
-magnum-common	magnum-common/db/dbname	string	magnumdb
+magnum-common	magnum-common/db/dbname	string	magnum
 magnum-common	magnum-common/dbconfig-install	boolean	true
 magnum-common	magnum-common/dbconfig-reinstall	boolean	false
 magnum-common	magnum-common/dbconfig-remove	boolean	true
@@ -15,7 +15,7 @@ magnum-common	magnum-common/mysql/admin-pass	password	secret1
 magnum-common	magnum-common/mysql/admin-user	string	root
 magnum-common	magnum-common/mysql/app-pass	password	secret9
 magnum-common	magnum-common/mysql/method	select	TCP/IP
-magnum-common	magnum-common/password-confirm	password	
+magnum-common	magnum-common/password-confirm	password	secret1
 magnum-common	magnum-common/purge	boolean	false
 magnum-common	magnum-common/remote/host	select	openstack.domain.tld
 magnum-common	magnum-common/remote/newhost	string	openstack.domain.tld
@@ -28,14 +28,14 @@ magnum-common	magnum/admin-tenant-name	string	admin
 magnum-common	magnum/admin-user	string	admin
 magnum-common	magnum/auth-host	string	10.0.4.1
 magnum-common	magnum/configure_db	boolean	true
-magnum-common	magnum/rabbit_host	string	10.0.4.1
+magnum-common	magnum/rabbit_host	string	openstack.domain.tld
 magnum-common	magnum/rabbit_password	password	secret91
 magnum-common	magnum/rabbit_userid	string	openstack
 nova-common	nova-common/app-password-confirm	password	
 nova-common	nova-common/database-type	select	mysql
-nova-common	nova-common/db/app-user	string	nova-common
-nova-common	nova-common/db/basepath	string	//var/lib/openstack/nova
-nova-common	nova-common/db/dbname	string	novadb
+nova-common	nova-common/db/app-user	string	nova
+nova-common	nova-common/db/basepath	string	/var/lib/openstack/nova
+nova-common	nova-common/db/dbname	string	nova
 nova-common	nova-common/dbconfig-install	boolean	true
 nova-common	nova-common/dbconfig-reinstall	boolean	false
 nova-common	nova-common/dbconfig-remove	boolean	true
@@ -48,7 +48,7 @@ nova-common	nova-common/mysql/admin-pass	password	secret1
 nova-common	nova-common/mysql/admin-user	string	root
 nova-common	nova-common/mysql/app-pass	password	secret13
 nova-common	nova-common/mysql/method	select	TCP/IP
-nova-common	nova-common/password-confirm	password	
+nova-common	nova-common/password-confirm	password	secret1
 nova-common	nova-common/purge	boolean	false
 nova-common	nova-common/remote/host	select	openstack.domain.tld
 nova-common	nova-common/remote/newhost	string	openstack.domain.tld
@@ -68,7 +68,7 @@ nova-common	nova/neutron_admin_password	password	secret93
 nova-common	nova/neutron_admin_tenant_name	string	admin
 nova-common	nova/neutron_admin_username	string	admin
 nova-common	nova/neutron_url	string	http://10.0.4.1:9696
-nova-common	nova/rabbit_host	string	10.0.4.1
+nova-common	nova/rabbit_host	string	openstack.domain.tld
 nova-common	nova/rabbit_password	password	secret91
 nova-common	nova/rabbit_userid	string	openstack
 ucf	ucf/changeprompt	select	keep_current

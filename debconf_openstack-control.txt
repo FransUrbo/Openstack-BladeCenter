@@ -5,7 +5,7 @@ barbican-api	barbican/keystone-ip	string	10.0.4.1
 barbican-api	barbican/keystone-project-name	string	admin
 barbican-api	barbican/region-name	string	europe-london
 barbican-api	barbican/register-endpoint	boolean	true
-barbican-common	barbican-common/app-password-confirm	password	
+barbican-common	barbican-common/app-password-confirm	password	secret5
 barbican-common	barbican-common/database-type	select	mysql
 barbican-common	barbican-common/db/app-user	string	barbican
 barbican-common	barbican-common/db/basepath	string	/var/lib/openstack/barbican
@@ -22,7 +22,7 @@ barbican-common	barbican-common/mysql/admin-pass	password	secret1
 barbican-common	barbican-common/mysql/admin-user	string	root
 barbican-common	barbican-common/mysql/app-pass	password	secret5
 barbican-common	barbican-common/mysql/method	select	TCP/IP
-barbican-common	barbican-common/password-confirm	password	
+barbican-common	barbican-common/password-confirm	password	secret1
 barbican-common	barbican-common/purge	boolean	true
 barbican-common	barbican-common/remote/host	select	openstack.domain.tld
 barbican-common	barbican-common/remote/newhost	string	openstack.domain.tld
@@ -31,6 +31,7 @@ barbican-common	barbican-common/remove-error	select	abort
 barbican-common	barbican-common/upgrade-backup	boolean	true
 barbican-common	barbican-common/upgrade-error	select	abort
 barbican-common	barbican/admin-password	password	secret90
+barbican-common	barbican/admin-password-confirm	password	secret94
 barbican-common	barbican/admin-tenant-name	string	admin
 barbican-common	barbican/admin-user	string	admin
 barbican-common	barbican/auth-host	string	10.0.4.1
@@ -64,7 +65,7 @@ cinder-api	cinder/keystone-project-name	string	admin
 cinder-api	cinder/region-name	string	secret90
 cinder-api	cinder/region-name	string	europe-london
 cinder-api	cinder/register-endpoint	boolean	true
-cinder-common	cinder-common/app-password-confirm	password	
+cinder-common	cinder-common/app-password-confirm	password	secret16
 cinder-common	cinder-common/database-type	select	mysql
 cinder-common	cinder-common/db/app-user	string	cinder
 cinder-common	cinder-common/db/basepath	string	/var/lib/openstack/cinder
@@ -81,7 +82,7 @@ cinder-common	cinder-common/mysql/admin-pass	password	secret1
 cinder-common	cinder-common/mysql/admin-user	string	root
 cinder-common	cinder-common/mysql/app-pass	password	secret16
 cinder-common	cinder-common/mysql/method	select	TCP/IP
-cinder-common	cinder-common/password-confirm	password	
+cinder-common	cinder-common/password-confirm	password	secret1
 cinder-common	cinder-common/purge	boolean	true
 cinder-common	cinder-common/remote/host	select	openstack.domain.tld
 cinder-common	cinder-common/remote/newhost	string	openstack.domain.tld
@@ -90,6 +91,7 @@ cinder-common	cinder-common/remove-error	select	abort
 cinder-common	cinder-common/upgrade-backup	boolean	true
 cinder-common	cinder-common/upgrade-error	select	abort
 cinder-common	cinder/admin-password	password	secret90
+cinder-common	cinder/admin-password-confirm	password	secret94
 cinder-common	cinder/admin-tenant-name	string	admin
 cinder-common	cinder/admin-user	string	admin
 cinder-common	cinder/auth-host	string	10.0.4.1
@@ -107,9 +109,9 @@ dbconfig-common	dbconfig-common/install-error	select	abort
 dbconfig-common	dbconfig-common/internal/reconfiguring	boolean	false
 dbconfig-common	dbconfig-common/mysql/admin-pass	password	secret1
 dbconfig-common	dbconfig-common/mysql/admin-user	string	root
-dbconfig-common	dbconfig-common/mysql/app-pass	password	HZX6Mq3G73jeLuqcJC6d
+dbconfig-common	dbconfig-common/mysql/app-pass	password	secret2
 dbconfig-common	dbconfig-common/mysql/method	select	TCP/IP
-dbconfig-common	dbconfig-common/password-confirm	password	
+dbconfig-common	dbconfig-common/password-confirm	password	secret1
 dbconfig-common	dbconfig-common/purge	boolean	true
 dbconfig-common	dbconfig-common/remember-admin-pass	boolean	true
 dbconfig-common	dbconfig-common/remote-questions-default	boolean	true
@@ -129,7 +131,7 @@ designate-api	designate/keystone-ip	string	10.0.4.1
 designate-api	designate/keystone-project-name	string	admin
 designate-api	designate/region-name	string	europe-london
 designate-api	designate/register-endpoint	boolean	true
-designate-common	designate-common/app-password-confirm	password	
+designate-common	designate-common/app-password-confirm	password	secret6
 designate-common	designate-common/database-type	select	mysql
 designate-common	designate-common/db/app-user	string	designate
 designate-common	designate-common/db/basepath	string	/var/lib/openstack/designate
@@ -146,7 +148,7 @@ designate-common	designate-common/mysql/admin-pass	password	secret1
 designate-common	designate-common/mysql/admin-user	string	root
 designate-common	designate-common/mysql/app-pass	password	secret6
 designate-common	designate-common/mysql/method	select	TCP/IP
-designate-common	designate-common/password-confirm	password	
+designate-common	designate-common/password-confirm	password	secret1
 designate-common	designate-common/purge	boolean	true
 designate-common	designate-common/remote/host	select	openstack.domain.tld
 designate-common	designate-common/remote/newhost	string	openstack.domain.tld
@@ -155,6 +157,7 @@ designate-common	designate-common/remove-error	select	abort
 designate-common	designate-common/upgrade-backup	boolean	true
 designate-common	designate-common/upgrade-error	select	abort
 designate-common	designate/admin-password	password	secret90
+designate-common	designate/admin-password-confirm	password	secret90
 designate-common	designate/admin-tenant-name	string	admin
 designate-common	designate/admin-user	string	admin
 designate-common	designate/auth-host	string	10.0.4.1
@@ -168,10 +171,9 @@ glance-api	glance/keystone-admin-password	password	secret94
 glance-api	glance/keystone-auth-token	password	secret90
 glance-api	glance/keystone-ip	string	10.0.4.1
 glance-api	glance/keystone-project-name	string	admin
-glance-api	glance/region-name	string	secret90
 glance-api	glance/region-name	string	europe-london
 glance-api	glance/register-endpoint	boolean	true
-glance-common	glance-common/app-password-confirm	password	
+glance-common	glance-common/app-password-confirm	password	secret7
 glance-common	glance-common/database-type	select	mysql
 glance-common	glance-common/db/app-user	string	glance
 glance-common	glance-common/db/basepath	string	/var/lib/openstack/glance
@@ -188,7 +190,7 @@ glance-common	glance-common/mysql/admin-pass	password	secret1
 glance-common	glance-common/mysql/admin-user	string	root
 glance-common	glance-common/mysql/app-pass	password	secret7
 glance-common	glance-common/mysql/method	select	TCP/IP
-glance-common	glance-common/password-confirm	password	
+glance-common	glance-common/password-confirm	password	secret1
 glance-common	glance-common/purge	boolean	true
 glance-common	glance-common/remote/host	select	openstack.domain.tld
 glance-common	glance-common/remote/newhost	string	openstack.domain.tld
@@ -197,6 +199,7 @@ glance-common	glance-common/remove-error	select	abort
 glance-common	glance-common/upgrade-backup	boolean	true
 glance-common	glance-common/upgrade-error	select	abort
 glance-common	glance/admin-password	password	secret90
+glance-common	glance/admin-password-confirm	password	secret90
 glance-common	glance/admin-tenant-name	string	admin
 glance-common	glance/admin-user	string	admin
 glance-common	glance/auth-host	string	10.0.4.1
@@ -208,9 +211,9 @@ glance-common	glance/rabbit_userid	string	openstack
 heat-api	heat/endpoint-ip	string	10.0.4.1
 heat-api	heat/keystone-auth-token	password	secret90
 heat-api	heat/keystone-ip	string	10.0.4.1
-heat-api	heat/region-name	string	secret90
+heat-api	heat/region-name	string	europe-london
 heat-api	heat/register-endpoint	boolean	true
-heat-common	heat-common/app-password-confirm	password	
+heat-common	heat-common/app-password-confirm	password	secret3
 heat-common	heat-common/database-type	select	mysql
 heat-common	heat-common/db/app-user	string	heat
 heat-common	heat-common/db/basepath	string	/var/lib/openstack/heat
@@ -227,7 +230,7 @@ heat-common	heat-common/mysql/admin-pass	password	secret1
 heat-common	heat-common/mysql/admin-user	string	root
 heat-common	heat-common/mysql/app-pass	password	secret3
 heat-common	heat-common/mysql/method	select	TCP/IP
-heat-common	heat-common/password-confirm	password	
+heat-common	heat-common/password-confirm	password	secret1
 heat-common	heat-common/purge	boolean	true
 heat-common	heat-common/remote/host	select	openstack.domain.tld
 heat-common	heat-common/remote/newhost	string	openstack.domain.tld
@@ -236,6 +239,7 @@ heat-common	heat-common/remove-error	select	abort
 heat-common	heat-common/upgrade-backup	boolean	true
 heat-common	heat-common/upgrade-error	select	abort
 heat-common	heat/admin-password	password	secret90
+heat-common	heat/admin-password-confirm	password	secret90
 heat-common	heat/admin-tenant-name	string	admin
 heat-common	heat/admin-user	string	admin
 heat-common	heat/auth-host	string	10.0.4.1
@@ -257,7 +261,7 @@ ironic-api	ironic/keystone-ip	string	10.0.4.1
 ironic-api	ironic/keystone-project-name	string	admin
 ironic-api	ironic/region-name	string	europe-london
 ironic-api	ironic/register-endpoint	boolean	true
-ironic-common	ironic-common/app-password-confirm	password	
+ironic-common	ironic-common/app-password-confirm	password	secret8
 ironic-common	ironic-common/database-type	select	mysql
 ironic-common	ironic-common/db/app-user	string	ironic
 ironic-common	ironic-common/db/basepath	string	/var/lib/openstack/ironic
@@ -274,7 +278,7 @@ ironic-common	ironic-common/mysql/admin-pass	password	secret1
 ironic-common	ironic-common/mysql/admin-user	string	root
 ironic-common	ironic-common/mysql/app-pass	password	secret8
 ironic-common	ironic-common/mysql/method	select	TCP/IP
-ironic-common	ironic-common/password-confirm	password	
+ironic-common	ironic-common/password-confirm	password	secret1
 ironic-common	ironic-common/purge	boolean	true
 ironic-common	ironic-common/remote/host	select	openstack.domain.tld
 ironic-common	ironic-common/remote/newhost	string	openstack.domain.tld
@@ -283,6 +287,7 @@ ironic-common	ironic-common/remove-error	select	abort
 ironic-common	ironic-common/upgrade-backup	boolean	true
 ironic-common	ironic-common/upgrade-error	select	abort
 ironic-common	ironic/admin-password	password	secret90
+ironic-common	ironic/admin-password-confirm	password	secret90
 ironic-common	ironic/admin-tenant-name	string	admin
 ironic-common	ironic/admin-user	string	admin
 ironic-common	ironic/auth-host	string	10.0.4.1
@@ -293,7 +298,7 @@ ironic-common	ironic/rabbit_password	password	secret91
 ironic-common	ironic/rabbit_userid	string	openstack
 keystone	keystone/admin-email	string	turbo@domain.tld
 keystone	keystone/admin-password	password	secret94
-keystone	keystone/admin-password-confirm	password	
+keystone	keystone/admin-password-confirm	password	secret94
 keystone	keystone/admin-role-name	string	admin
 keystone	keystone/admin-tenant-name	string	admin
 keystone	keystone/admin-user	string	admin
@@ -303,6 +308,7 @@ keystone	keystone/configure_db	boolean	true
 keystone	keystone/create-admin-tenant	boolean	true
 keystone	keystone/database-type	select	mysql
 keystone	keystone/db/app-user	string	keystone
+keystone	keystone/db/basepath	string	/var/lib/openstack/keystone
 keystone	keystone/db/dbname	string	keystone
 keystone	keystone/dbconfig-install	boolean	true
 keystone	keystone/dbconfig-reinstall	boolean	true
@@ -310,19 +316,20 @@ keystone	keystone/dbconfig-remove	boolean	true
 keystone	keystone/dbconfig-upgrade	boolean	true
 keystone	keystone/endpoint-ip	string	10.0.4.1
 keystone	keystone/install-error	select	abort
-keystone	keystone/internal/reconfiguring	boolean	false
+keystone	keystone/internal/reconfiguring	boolean	true
 keystone	keystone/internal/skip-preseed	boolean	true
 keystone	keystone/missing-db-package-error	select	abort
 keystone	keystone/mysql/admin-pass	password	secret1
 keystone	keystone/mysql/admin-user	string	root
 keystone	keystone/mysql/app-pass	password	secret2
 keystone	keystone/mysql/method	select	TCP/IP
+keystone	keystone/password-confirm	password	secret1
 keystone	keystone/purge	boolean	false
 keystone	keystone/region-name	string	europe-london
 keystone	keystone/register-endpoint	boolean	true
 keystone	keystone/remote/host	select	openstack.domain.tld
 keystone	keystone/remote/newhost	string	openstack.domain.tld
-keystone	keystone/remote/port	string
+keystone	keystone/remote/port	string	
 keystone	keystone/remove-error	select	abort
 keystone	keystone/upgrade-backup	boolean	true
 keystone	keystone/upgrade-error	select	abort
@@ -340,7 +347,7 @@ magnum-api	magnum/keystone-ip	string	10.0.4.1
 magnum-api	magnum/keystone-project-name	string	admin
 magnum-api	magnum/region-name	string	europe-london
 magnum-api	magnum/register-endpoint	boolean	true
-magnum-common	magnum-common/app-password-confirm	password	
+magnum-common	magnum-common/app-password-confirm	password	secret9
 magnum-common	magnum-common/database-type	select	mysql
 magnum-common	magnum-common/db/app-user	string	magnum
 magnum-common	magnum-common/db/basepath	string	/var/lib/openstack/magnum
@@ -357,7 +364,7 @@ magnum-common	magnum-common/mysql/admin-pass	password	secret1
 magnum-common	magnum-common/mysql/admin-user	string	root
 magnum-common	magnum-common/mysql/app-pass	password	secret9
 magnum-common	magnum-common/mysql/method	select	TCP/IP
-magnum-common	magnum-common/password-confirm	password	
+magnum-common	magnum-common/password-confirm	password	secret1
 magnum-common	magnum-common/purge	boolean	true
 magnum-common	magnum-common/remote/host	select	openstack.domain.tld
 magnum-common	magnum-common/remote/newhost	string	openstack.domain.tld
@@ -366,6 +373,7 @@ magnum-common	magnum-common/remove-error	select	abort
 magnum-common	magnum-common/upgrade-backup	boolean	true
 magnum-common	magnum-common/upgrade-error	select	abort
 magnum-common	magnum/admin-password	password	secret90
+magnum-common	magnum/admin-password-confirm	password	secret90
 magnum-common	magnum/admin-tenant-name	string	admin
 magnum-common	magnum/admin-user	string	admin
 magnum-common	magnum/auth-host	string	10.0.4.1
@@ -380,7 +388,7 @@ manila-api	manila/keystone-ip	string	10.0.4.1
 manila-api	manila/keystone-project-name	string	admin
 manila-api	manila/region-name	string	europe-london
 manila-api	manila/register-endpoint	boolean	true
-manila-common	manila-common/app-password-confirm	password	
+manila-common	manila-common/app-password-confirm	password	secret10
 manila-common	manila-common/database-type	select	mysql
 manila-common	manila-common/db/app-user	string	manila
 manila-common	manila-common/db/basepath	string	/var/lib/openstack/manila
@@ -397,7 +405,7 @@ manila-common	manila-common/mysql/admin-pass	password	secret1
 manila-common	manila-common/mysql/admin-user	string	root
 manila-common	manila-common/mysql/app-pass	password	secret10
 manila-common	manila-common/mysql/method	select	TCP/IP
-manila-common	manila-common/password-confirm	password	
+manila-common	manila-common/password-confirm	password	secret1
 manila-common	manila-common/purge	boolean	true
 manila-common	manila-common/remote/host	select	openstack.domain.tld
 manila-common	manila-common/remote/newhost	string	openstack.domain.tld
@@ -406,6 +414,7 @@ manila-common	manila-common/remove-error	select	abort
 manila-common	manila-common/upgrade-backup	boolean	true
 manila-common	manila-common/upgrade-error	select	abort
 manila-common	manila/admin-password	password	secret90
+manila-common	manila/admin-password-confirm	password	secret90
 manila-common	manila/admin-tenant-name	string	admin
 manila-common	manila/admin-user	string	admin
 manila-common	manila/auth-host	string	10.0.4.1
@@ -425,7 +434,7 @@ mistral-api	mistral/keystone-ip	string	10.0.4.1
 mistral-api	mistral/keystone-project-name	string	admin
 mistral-api	mistral/region-name	string	europe-london
 mistral-api	mistral/register-endpoint	boolean	true
-mistral-common	mistral-common/app-password-confirm	password	
+mistral-common	mistral-common/app-password-confirm	password	secret11
 mistral-common	mistral-common/database-type	select	mysql
 mistral-common	mistral-common/db/app-user	string	mistral
 mistral-common	mistral-common/db/basepath	string	/var/lib/openstack/mistral
@@ -442,7 +451,7 @@ mistral-common	mistral-common/mysql/admin-pass	password	secret1
 mistral-common	mistral-common/mysql/admin-user	string	root
 mistral-common	mistral-common/mysql/app-pass	password	secret11
 mistral-common	mistral-common/mysql/method	select	TCP/IP
-mistral-common	mistral-common/password-confirm	password	
+mistral-common	mistral-common/password-confirm	password	secret1
 mistral-common	mistral-common/purge	boolean	true
 mistral-common	mistral-common/remote/host	select	openstack.domain.tld
 mistral-common	mistral-common/remote/newhost	string	openstack.domain.tld
@@ -451,6 +460,7 @@ mistral-common	mistral-common/remove-error	select	abort
 mistral-common	mistral-common/upgrade-backup	boolean	true
 mistral-common	mistral-common/upgrade-error	select	abort
 mistral-common	mistral/admin-password	password	secret90
+mistral-common	mistral/admin-password-confirm	password	secret90
 mistral-common	mistral/admin-tenant-name	string	admin
 mistral-common	mistral/admin-user	string	admin
 mistral-common	mistral/auth-host	string	10.0.4.1
@@ -465,7 +475,7 @@ murano-api	murano/keystone-ip	string	10.0.4.1
 murano-api	murano/keystone-project-name	string	admin
 murano-api	murano/region-name	string	europe-london
 murano-api	murano/register-endpoint	boolean	true
-murano-common	murano-common/app-password-confirm	password	
+murano-common	murano-common/app-password-confirm	password	secret12
 murano-common	murano-common/database-type	select	mysql
 murano-common	murano-common/db/app-user	string	murano
 murano-common	murano-common/db/basepath	string	/var/lib/openstack/murano
@@ -482,7 +492,7 @@ murano-common	murano-common/mysql/admin-pass	password	secret1
 murano-common	murano-common/mysql/admin-user	string	root
 murano-common	murano-common/mysql/app-pass	password	secret12
 murano-common	murano-common/mysql/method	select	TCP/IP
-murano-common	murano-common/password-confirm	password	
+murano-common	murano-common/password-confirm	password	secret1
 murano-common	murano-common/purge	boolean	true
 murano-common	murano-common/remote/host	select	openstack.domain.tld
 murano-common	murano-common/remote/newhost	string	openstack.domain.tld
@@ -491,6 +501,7 @@ murano-common	murano-common/remove-error	select	abort
 murano-common	murano-common/upgrade-backup	boolean	true
 murano-common	murano-common/upgrade-error	select	abort
 murano-common	murano/admin-password	password	secret90
+murano-common	murano/admin-password-confirm	password	secret90
 murano-common	murano/admin-tenant-name	string	admin
 murano-common	murano/admin-user	string	admin
 murano-common	murano/auth-host	string	10.0.4.1
@@ -503,7 +514,7 @@ mysql-server-5.6	mysql-server-5.6/really_downgrade	boolean	true
 mysql-server-5.6	mysql-server-5.6/start_on_boot	boolean	true
 mysql-server-5.6	mysql-server/root_password	password	secret1
 mysql-server-5.6	mysql-server/root_password_again	password	secret1
-neutron-common	neutron-common/app-password-confirm	password	
+neutron-common	neutron-common/app-password-confirm	password	secret4
 neutron-common	neutron-common/database-type	select	mysql
 neutron-common	neutron-common/db/app-user	string	neutron
 neutron-common	neutron-common/db/basepath	string	/var/lib/openstack/neutron
@@ -520,7 +531,7 @@ neutron-common	neutron-common/mysql/admin-pass	password	secret1
 neutron-common	neutron-common/mysql/admin-user	string	root
 neutron-common	neutron-common/mysql/app-pass	password	secret4
 neutron-common	neutron-common/mysql/method	select	TCP/IP
-neutron-common	neutron-common/password-confirm	password	
+neutron-common	neutron-common/password-confirm	password	secret1
 neutron-common	neutron-common/purge	boolean	true
 neutron-common	neutron-common/remote/host	select	openstack.domain.tld
 neutron-common	neutron-common/remote/newhost	string	openstack.domain.tld
@@ -535,15 +546,13 @@ neutron-common	neutron/admin-user	string	admin
 neutron-common	neutron/auth-host	string	10.0.4.1
 neutron-common	neutron/configure_db	boolean	true
 neutron-common	neutron/enable_tunneling	boolean	true
-neutron-common	neutron/enable_tunneling	select	False
 neutron-common	neutron/local_ip	string	
 neutron-common	neutron/nova_admin_password	password	secret4
 neutron-common	neutron/nova_admin_tenant_id	string	
 neutron-common	neutron/nova_admin_tenant_name	string	admin
 neutron-common	neutron/nova_admin_username	string	admin
-neutron-common	neutron/nova_region	string	secret90
 neutron-common	neutron/nova_region	string	europe-london
-neutron-common	neutron/nova_url	string	http://openstack.domain.tld:8774/v2
+neutron-common	neutron/nova_url	string	http://127.0.0.1:8774/v2
 neutron-common	neutron/plugin-select	select	ml2
 neutron-common	neutron/rabbit_host	string	openstack.domain.tld
 neutron-common	neutron/rabbit_password	password	secret91
@@ -551,6 +560,7 @@ neutron-common	neutron/rabbit_userid	string	openstack
 neutron-common	neutron/tenant_network_type	select	gre
 neutron-common	neutron/tunnel_id_ranges	string	1:1000
 neutron-metadata-agent	neutron-metadata/admin-password	password	secret4
+neutron-metadata-agent	neutron-metadata/admin-password-confirm	password	secret4
 neutron-metadata-agent	neutron-metadata/admin-tenant-name	string	admin
 neutron-metadata-agent	neutron-metadata/admin-user	string	admin
 neutron-metadata-agent	neutron-metadata/auth-host	string	10.0.4.1
@@ -561,15 +571,14 @@ neutron-server	neutron/keystone-admin-password	password	secret94
 neutron-server	neutron/keystone-auth-token	password	secret90
 neutron-server	neutron/keystone-ip	string	10.0.4.1
 neutron-server	neutron/keystone-project-name	string	admin
-neutron-server	neutron/region-name	string	secret90
 neutron-server	neutron/region-name	string	europe-london
 neutron-server	neutron/register-endpoint	boolean	true
-nova-api	nova-api/app-password-confirm	password	
+nova-api	nova-api/app-password-confirm	password	secret14
 nova-api	nova-api/configure_db	boolean	true
 nova-api	nova-api/database-type	select	mysql
-nova-api	nova-api/db/app-user	string	nova-api
+nova-api	nova-api/db/app-user	string	novaapi
 nova-api	nova-api/db/basepath	string	/var/lib/openstack/nova-api
-nova-api	nova-api/db/dbname	string	nova-api
+nova-api	nova-api/db/dbname	string	novaapi
 nova-api	nova-api/dbconfig-install	boolean	true
 nova-api	nova-api/dbconfig-reinstall	boolean	true
 nova-api	nova-api/dbconfig-remove	boolean	true
@@ -582,7 +591,7 @@ nova-api	nova-api/mysql/admin-pass	password	secret1
 nova-api	nova-api/mysql/admin-user	string	root
 nova-api	nova-api/mysql/app-pass	password	secret14
 nova-api	nova-api/mysql/method	select	TCP/IP
-nova-api	nova-api/password-confirm	password	
+nova-api	nova-api/password-confirm	password	secret1
 nova-api	nova-api/purge	boolean	true
 nova-api	nova-api/remote/host	select	openstack.domain.tld
 nova-api	nova-api/remote/newhost	string	openstack.domain.tld
@@ -596,10 +605,10 @@ nova-api	nova/keystone-admin-password	password	secret94
 nova-api	nova/keystone-auth-token	password	secret90
 nova-api	nova/keystone-ip	string	10.0.4.1
 nova-api	nova/keystone-project-name	string	admin
-nova-api	nova/region-name	string	secret90
 nova-api	nova/region-name	string	europe-london
 nova-api	nova/register-endpoint	boolean	true
-nova-common	nova-common/app-password-confirm	password	
+nova-api	novaapi/configure_db	boolean	true
+nova-common	nova-common/app-password-confirm	password	secret13
 nova-common	nova-common/database-type	select	mysql
 nova-common	nova-common/db/app-user	string	nova
 nova-common	nova-common/db/basepath	string	/var/lib/openstack/nova
@@ -616,7 +625,7 @@ nova-common	nova-common/mysql/admin-pass	password	secret1
 nova-common	nova-common/mysql/admin-user	string	root
 nova-common	nova-common/mysql/app-pass	password	secret13
 nova-common	nova-common/mysql/method	select	TCP/IP
-nova-common	nova-common/password-confirm	password	
+nova-common	nova-common/password-confirm	password	secret1
 nova-common	nova-common/purge	boolean	true
 nova-common	nova-common/remote/host	select	openstack.domain.tld
 nova-common	nova-common/remote/newhost	string	openstack.domain.tld
@@ -634,11 +643,10 @@ nova-common	nova/auth-host	string	10.0.4.1
 nova-common	nova/configure_db	boolean	true
 nova-common	nova/metadata_secret	password	secret4
 nova-common	nova/my-ip	string	10.0.4.1
-nova-common	nova/neutron_admin_password	password	secret4
 nova-common	nova/neutron_admin_password	password	secret95
 nova-common	nova/neutron_admin_tenant_name	string	admin
 nova-common	nova/neutron_admin_username	string	admin
-nova-common	nova/neutron_url	string	http://openstack.domain.tld:9696
+nova-common	nova/neutron_url	string	http://127.0.0.1:9696
 nova-common	nova/rabbit_host	string	openstack.domain.tld
 nova-common	nova/rabbit_password	password	secret91
 nova-common	nova/rabbit_userid	string	openstack
@@ -652,7 +660,7 @@ senlin-api	senlin/keystone-ip	string	10.0.4.1
 senlin-api	senlin/keystone-project-name	string	admin
 senlin-api	senlin/region-name	string	europe-london
 senlin-api	senlin/register-endpoint	boolean	true
-senlin-common	senlin-common/app-password-confirm	password	
+senlin-common	senlin-common/app-password-confirm	password	secret15
 senlin-common	senlin-common/database-type	select	mysql
 senlin-common	senlin-common/db/app-user	string	senlin
 senlin-common	senlin-common/db/basepath	string	/var/lib/openstack/senlin
@@ -669,7 +677,7 @@ senlin-common	senlin-common/mysql/admin-pass	password	secret1
 senlin-common	senlin-common/mysql/admin-user	string	root
 senlin-common	senlin-common/mysql/app-pass	password	secret15
 senlin-common	senlin-common/mysql/method	select	TCP/IP
-senlin-common	senlin-common/password-confirm	password	
+senlin-common	senlin-common/password-confirm	password	secret1
 senlin-common	senlin-common/purge	boolean	true
 senlin-common	senlin-common/remote/host	select	openstack.domain.tld
 senlin-common	senlin-common/remote/newhost	string	openstack.domain.tld
@@ -678,6 +686,7 @@ senlin-common	senlin-common/remove-error	select	abort
 senlin-common	senlin-common/upgrade-backup	boolean	true
 senlin-common	senlin-common/upgrade-error	select	abort
 senlin-common	senlin/admin-password	password	secret90
+senlin-common	senlin/admin-password-confirm	password	secret90
 senlin-common	senlin/admin-tenant-name	string	admin
 senlin-common	senlin/admin-user	string	admin
 senlin-common	senlin/auth-host	string	10.0.4.1
@@ -687,6 +696,7 @@ senlin-common	senlin/rabbit_password	password	secret91
 senlin-common	senlin/rabbit_userid	string	openstack
 ucf	ucf/changeprompt	select	keep_current
 zaqar-common	zaqar/admin-password	password	secret90
+zaqar-common	zaqar/admin-password-confirm	password	secret90
 zaqar-common	zaqar/admin-tenant-name	string	admin
 zaqar-common	zaqar/admin-user	string	admin
 zaqar-common	zaqar/auth-host	string	10.0.4.1
