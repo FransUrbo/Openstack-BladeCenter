@@ -274,6 +274,13 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
 
     # ======================================================================
 
+    # RabbitMQ is notoriously sucky and unstable and crashes all the effin time!
+    # So install a script that checks it once a minut and if it's dead, restart
+    # it.
+    curl -s http://${LOCALSERVER}/PXEBoot/check_rabbitmq.sh > /usr/local/sbin/check_rabbitmq.sh
+    chmod +x /usr/local/sbin/check_rabbitmq.sh
+    echo "*/1 * * * *	root	/usr/local/sbin/check_rabbitmq.sh" > /etc/cron.d/rabbitmq
+
     # Do local setup of Openstack.
     curl -s http://${LOCALSERVER}/PXEBoot/local_setup_openstack-control.sh > \
         /var/tmp/local_setup_openstack-control.sh
