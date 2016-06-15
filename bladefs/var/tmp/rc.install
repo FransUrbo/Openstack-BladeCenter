@@ -10,7 +10,7 @@ do_install() {
     apt-get -y --no-install-recommends install $*
 }
 
-get_debconf_passwd () {
+get_debconf_value () {
     debconf-get-selections | \
         egrep "^${1}[ $(printf '\t')].*${2}" | \
         sed 's@.*[ \t]@@'
@@ -60,8 +60,20 @@ sed -i "s@^127.*${hostname}@${ip}\t${hostname}.$(dnsdomainname)\t${hostname}@" /
 
 apt-get update
 if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
-    # A blade - upgrade system to Sid.
+    # A blade.
+
+    apt-get update
+
+    # Upgrade system to Sid.
     apt-get -y dist-upgrade
+
+    # Install the HP utilities, dbconfig and Openstack packaging tools.
+    do_install hp-snmp-agents hponcfg dbconfig-mysql openstack-pkg-tools
+    sed -i "s@'false'@'true'@" /etc/dbconfig-common/config
+
+    # Remove the 4.6.0 kernel (it does not come with "aufs", which we'll need
+    # for Docker). Should leave us with only 3.16.0.
+    dpkg --purge linux-image-4.6.0-1-amd64 linux-image-amd64
 fi
 
 nr="$(echo "${hostname}" | \
@@ -75,46 +87,42 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
         sed "s@10\.0\.4\.3@${ip}@" | \
         debconf-set-selections
 
-    # Install the SQL clients
+    # Install the SQL clients. Not required, but nice to have.
     if [ "${SQLDB}" = "mysql" ]; then
         do_install mysql-client-5.6
     else
         do_install mariadb-client-10.0
     fi
 
-    # Properly seed dbconfig - It's not enough to just have it in the dbconf
-    # db, we also need to create the config files.
-    for app in magnum nova; do
-        cfg="/etc/dbconfig-common/${app}-common.conf"
-        pass="$(get_debconf_passwd "${app}-common" "/mysql/app-pass")"
+    # Properly seed dbconfig - It's not enough to just have it in the debconf
+    # db, we also need to create the config files for dbconfig-common to use.
+    for app in magnum-common nova-common; do
+        admpass="$(get_debconf_value "${app}" "/mysql/admin-pass")"
+        pass="$(get_debconf_value "${app}" "/mysql/app-pass")"
+        user="$(get_debconf_value "${app}" "/db/app-user")"
+        db="$(get_debconf_value "${app}" "/db/dbname")"
 
         curl -s http://${LOCALSERVER}/PXEBoot/dbconfig-common-template.conf | \
             sed -e "s@%APP%@${app}@" -e "s@%PASS%@${pass}@" \
-                -e "s@%PKG%@${app}-common@" > "${cfg}"
+                -e "s@%PKG%@${pkg}@" -e "s@%USER%@${user}@" \
+                -e "s@%DB%@${db}@"   -e "s@%ADMPASS%@${admpass}@" \
+                > "/etc/dbconfig-common/${app}.conf"
     done
 
-    # Install the Compute packages
+    # Install the Compute packages.
+    # nova-compute-ironic : Conflicts: nova-compute-kvm but 2:13.0.0-4 is to be installed
+    # nova-compute-kvm : Conflicts: nova-compute-ironic but 2:13.0.0-4 is to be installed
     do_install nova-compute-kvm nova-console magnum-conductor fping
 
     # ======================================================================
 
-    # Update the config file
-    openstack-config --set /etc/nova/nova.conf DEFAULT dmz_net 10.99.0.0
-    openstack-config --set /etc/nova/nova.conf DEFAULT dmz_mask 255.255.255.0
-    openstack-config --set /etc/nova/nova.conf DEFAULT pybasedir /usr/lib/python2.7/dist-packages
-    openstack-config --set /etc/nova/nova.conf DEFAULT memcached_servers 127.0.0.1:11211
-    openstack-config --set /etc/nova/nova.conf DEFAULT internal_service_availability_zone internal
-    openstack-config --set /etc/nova/nova.conf DEFAULT default_availability_zone nova
-    openstack-config --set /etc/nova/nova.conf DEFAULT cross_az_attach True
-    openstack-config --set /etc/nova/nova.conf DEFAULT default_schedule_zone nova
-    openstack-config --set /etc/nova/nova.conf DEFAULT block_device_allocate_retries 300
-    openstack-config --set /etc/nova/nova.conf DEFAULT block_device_allocate_retries_interval 10
-    openstack-config --set /etc/nova/nova.conf DEFAULT block_device_creation_timeout 300
-    curl -s http://${LOCALSERVER}/PXEBoot/nova.sed > /var/tmp/nova.sed
-    sed -i -f /var/tmp/nova.sed /etc/nova/nova.conf
+    # Do local setup of Openstack.
+    curl -s http://${LOCALSERVER}/PXEBoot/local_setup_openstack-compute.sh > \
+        /var/tmp/local_setup_openstack-compute.sh
+    sh -x /var/tmp/local_setup_openstack-compute.sh
 
-    # Install the Nova Docker plugin
-    curl -s http://${LOCALSERVER}/PXEBoot/PXEBoot/install_nova_docker.sh > \
+    # Install the Nova Docker plugin.
+    curl -s http://${LOCALSERVER}/PXEBoot/install_nova_docker.sh > \
         /var/tmp/install_nova_docker.sh
     sh /var/tmp/install_nova_docker.sh
 elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
@@ -132,7 +140,7 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     do_install "${server}" rabbitmq-server mongodb-server memcached
 
     # Create RabbitMQ user
-    pass="$(get_debconf_passwd "barbican-common" "/rabbit_password")"
+    pass="$(get_debconf_value "barbican-common" "/rabbit_password")"
     rabbitmqctl add_user openstack "${pass}"
     rabbitmqctl set_permissions -p / openstack ".*" ".*" ".*"
 
@@ -143,14 +151,21 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     sed -i "s@^bind-address[ \t].*@bind-address\t= 0.0.0.0@" "${cfg}"
     /etc/init.d/mysql restart
 
+    # ======================================================================
+
+    # Core-core packages installed. Let's install next step: Keystone and get
+    # that working.
+
+    # ======================================================================
+
     # Seed the SQL database
     user="$(grep ^user /etc/mysql/debian.cnf | tail -n1 | sed 's@.* @@')"
     pass="$(grep ^password /etc/mysql/debian.cnf | tail -n1 | sed 's@.* @@')"
     curl -s http://${LOCALSERVER}/PXEBoot/blade-users.sql-${SQLDB} | \
         mysql -hlocalhost -u"${user}" -p"${pass}" mysql
 
-    # Properly seed dbconfig - It's not enough to just have it in the dbconf
-    # db, we also need to create the config files.
+    # Properly seed dbconfig - It's not enough to just have it in the debconf
+    # db, we also need to create the config files for dbconfig-common to use.
     for app in barbican cinder designate glance heat ironic magnum manila \
         mistral murano neutron nova-api nova senlin keystone
     do
@@ -159,26 +174,45 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
         else
             pkg="${app}-common"
         fi
-        pass="$(get_debconf_passwd "${pkg}" "/mysql/app-pass")"
+
+        # Most of this is primarily here because I get a postinst error when
+        # installing nova-api - "You have an error in your SQL syntax".
+        # If I remove the dash in the username/database (and just call it
+        # "novaapi", it works).
+        admpass="$(get_debconf_value "${pkg}" "/mysql/admin-pass")"
+        pass="$(get_debconf_value "${pkg}" "/mysql/app-pass")"
+        user="$(get_debconf_value "${pkg}" "/db/app-user")"
+        db="$(get_debconf_value "${pkg}" "/db/dbname")"
         curl -s http://${LOCALSERVER}/PXEBoot/dbconfig-common-template.conf | \
             sed -e "s@%APP%@${app}@" -e "s@%PASS%@${pass}@" \
-            -e "s@%PKG%@${pkg}@" > "/etc/dbconfig-common/${pkg}.conf"
+                -e "s@%PKG%@${pkg}@" -e "s@%USER%@${user}@" \
+                -e "s@%DB%@${db}@"   -e "s@%ADMPASS%@${admpass}@" \
+                > "/etc/dbconfig-common/${pkg}.conf"
     done
 
-    # Setup the dashboard
+    # Prepare the configuration of the dashboard.
     mkdir -p /etc/openstack-dashboard
     curl -s http://${LOCALSERVER}/PXEBoot/dashboard.conf > /etc/openstack-dashboard/local_settings.py
 
-    # Install Openstack Authentication server and the 'openstack' script.
-    do_install keystone python-openstackclient openstack-dashboard-apache cryptsetup
+    # Install Openstack Authentication server and the 'openstack' script
+    # as well as the dashboard.
+    do_install keystone python-keystone python-openstackclient \
+        openstack-dashboard-apache cryptsetup
 
-    # Get the Openstack RC file.
+    # Get the Openstack RC file. Going to need that both in the testing of
+    # Keystone as well as local Openstack configuration further down.
     curl -s http://${LOCALSERVER}/PXEBoot/admin-openrc > /root/admin-openrc
     . /root/admin-openrc
 
     # Just double check - if we can't retrieve the user list, exit here,
-    # no point in continuing installing on a broken system.
+    # no point in continuing installing on a broken system (if Keystone
+    # isn't working, nothing will).
     openstack user list | grep -q admin || exit 1
+
+    # Get the ssh key for Cinder and Nova.
+    curl -s http://${LOCALSERVER}/PXEBoot/id_rsa-control > /etc/cinder/sshkey
+    chown cinder:root /etc/cinder/sshkey ; chmod 0600 /etc/cinder/sshkey
+    cp /etc/cinder/sshkey /etc/nova/sshkey ; chown nova:root /etc/nova/sshkey
 
     # ======================================================================
 
@@ -230,68 +264,40 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     # ======================================================================
 
     # Openstack is now installed. Correctly we hope - TODO: Check this somehow?
-    # Time to do some local configuration setup.
+    # Time to do tune the setup for my use-case(s).
 
     # ======================================================================
 
-    # Configure Manila.
-    openstack-config --set /etc/manila/manila.conf DEFAULT driver_handles_share_servers True
-    openstack-config --set /etc/manila/manila.conf DEFAULT service_instance_user True
-    openstack-config --set /etc/manila/manila.conf DEFAULT storage_availability_zone nova
-    for init in /etc/init.d/manila-*; do $init restart; done
-
-    # Configure Nova.
-    openstack-config --set /etc/nova/nova.conf DEFAULT dmz_net 10.99.0.0
-    openstack-config --set /etc/nova/nova.conf DEFAULT dmz_mask 255.255.255.0
-    openstack-config --set /etc/nova/nova.conf DEFAULT pybasedir /usr/lib/python2.7/dist-packages
-    openstack-config --set /etc/nova/nova.conf DEFAULT enabled_apis osapi_compute,metadata
-    openstack-config --set /etc/nova/nova.conf DEFAULT use_neutron True
-    openstack-config --set /etc/nova/nova.conf DEFAULT memcached_servers 127.0.0.1:11211
-    openstack-config --set /etc/nova/nova.conf DEFAULT internal_service_availability_zone internal
-    openstack-config --set /etc/nova/nova.conf DEFAULT default_availability_zone nova
-    openstack-config --set /etc/nova/nova.conf DEFAULT cross_az_attach True
-    openstack-config --set /etc/nova/nova.conf DEFAULT default_schedule_zone nova
-    openstack-config --set /etc/nova/nova.conf DEFAULT block_device_allocate_retries 300
-    openstack-config --set /etc/nova/nova.conf DEFAULT block_device_allocate_retries_interval 10
-    openstack-config --set /etc/nova/nova.conf DEFAULT block_device_creation_timeout 300
-#    curl -s http://${LOCALSERVER}/PXEBoot/nova.sed > /var/tmp/nova.sed
-#    sed -i -f /var/tmp/nova.sed /etc/nova/nova.conf
-    for init in /etc/init.d/nova-*; do $init restart; done
-
-    # Configure Zaqar.
-    openstack-config --set /etc/zaqar/zaqar.conf DEFAULT database zaqar
-    openstack-config --set /etc/zaqar/zaqar.conf DEFAULT unreliable True
-    openstack-config --set /etc/zaqar/zaqar.conf DEFAULT bind = ${ip}
-    /etc/init.d/zaqar-server restart
-
-    # Configure Cinder.
-    openstack-config --set /etc/cinder/cinder.conf DEFAULT volume_group blade_center
-    openstack-config --set /etc/cinder/cinder.conf DEFAULT storage_availability_zone nova
-    openstack-config --set /etc/cinder/cinder.conf DEFAULT default_availability_zone nova
-#    curl -s http://${LOCALSERVER}/PXEBoot/cinder.sed > /var/tmp/cinder.sed
-#    sed -i -f /var/tmp/cinder.sed /etc/cinder/cinder.conf
-    for init in /etc/init.d/cinder-*; do $init restart; done
-
-    # Configure Neutron.
-    openstack-config --set /etc/neutron/neutron.conf DEFAULT default_availability_zones nova
-    openstack-config --set /etc/neutron/neutron.conf DEFAULT availability_zone nova
-    /etc/init.d/neutron-server restart
-
-    # Recreate the flavors (with new ones).
-    curl -s http://${LOCALSERVER}/PXEBoot/PXEBoot/install_openstack_flavors.sh > \
-        /var/tmp/install_openstack_flavors.sh
-    sh /var/tmp/install_openstack_flavors.sh
+    # Do local setup of Openstack.
+    curl -s http://${LOCALSERVER}/PXEBoot/local_setup_openstack-control.sh > \
+        /var/tmp/local_setup_openstack-control.sh
+    sh -x /var/tmp/local_setup_openstack-control.sh
 
     # Install the ZFS/ZoL Openstack Cinder plugin.
-    curl -s http://${LOCALSERVER}/PXEBoot/PXEBoot/install_cinder_zfs.sh > \
+    curl -s http://${LOCALSERVER}/PXEBoot/install_cinder_zfs.sh > \
         /var/tmp/install_cinder_zfs.sh
-    sh /var/tmp/install_cinder_zfs.sh
+    sh -x /var/tmp/install_cinder_zfs.sh
+
+    # Import a bunch of external images.
+    # Need to run this with nohup in the background, because this will
+    # take a while!
+    curl -s http://${LOCALSERVER}/PXEBoot/install_images.sh \
+        /var/tmp/install_images.sh
+    nohup sh -x /var/tmp/install_images.sh &
+
+    # Create a LVM on /dev/sdb.
+    if [ -e "/dev/sdb" ]; then
+        for init in /etc/init.d/lvm2*; do $init start; done
+        pvcreate /dev/sdb
+        vgcreate blade_center /dev/sdb
+    fi
 fi
 
+#apt-get -y remove openstack-pkg-tools
 apt-get -y autoremove
 apt-get clean
 
-sed -i "s@^\(sh /var/tmp/rc\.install\)\$@#\1@" /etc/rc.local
+sed -i "s@^\(sh /var/tmp/rc\.install.*\)\$@#\1@" /etc/rc.local
 touch /var/tmp/rc.install.done
 
 echo "=> W E ' R E   A L L   D O N E :" $(date) " <="
