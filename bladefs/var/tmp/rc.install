@@ -125,6 +125,12 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     curl -s http://${LOCALSERVER}/PXEBoot/install_nova_docker.sh > \
         /var/tmp/install_nova_docker.sh
     sh /var/tmp/install_nova_docker.sh
+
+    # Make sure Docker start correctly.
+    echo "" >> /etc/default/docker
+    echo "DOCKER_OPTS=\"-H fd:// -H unix:///var/run/docker.sock -H tcp://127.0.0.1:2375\"" \
+        >> /etc/default/docker
+    /etc/init.d/docker restart
 elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     # => A Control node
 
