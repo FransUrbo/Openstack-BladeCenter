@@ -61,9 +61,9 @@ san_zfs_command=/usr/local/sbin/zfswrapper
 verbose=true
 EOF
 
-backends="$(grep '^enabled_backends' /etc/cinder/cinder.conf | sed 's@[ \t].*@@')"
-[ -n "${backends}" ] && backends="${backends},"
-pkgos_inifile set /etc/cinder/cinder.conf DEFAULT enabled_backends ${backends}zol
+pkgos_inifile get /etc/cinder/cinder.conf DEFAULT enabled_backends
+[ -n "${RET}" ] && RET="${RET},"
+pkgos_inifile set /etc/cinder/cinder.conf DEFAULT enabled_backends ${RET}zol
 for init in /etc/init.d/cinder-*; do $init restart; done
 
 # Get the Cinder ZFS/ZoL ssh keys to use with ZFS/ZoL SAN.
