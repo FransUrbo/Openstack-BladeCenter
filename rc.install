@@ -16,8 +16,6 @@ get_debconf_value () {
         sed 's@.*[ \t]@@'
 }
 
-set -ex
-
 LOCALSERVER="localserver"
 LOGFILE="/var/tmp/rc.install.log"
 [ -z "${DEBIAN_FRONTEND}" ] && DEBIAN_FRONTEND="noninteractive"
@@ -43,8 +41,11 @@ exec 1<&-		# Close STDOUT file descriptor
 exec 2<&-		# Close STDERR file descriptor
 exec 1<>$LOGFILE	# Open STDOUT as $LOGFILE file for read and write.
 exec 2>&1		# Redirect STDERR to STDOUT
-
 chmod 0600 /var/tmp/rc.install.log
+
+echo "=> Starting rc.install: $(date) <="
+
+set -ex
 
 # Get IP of this host
 set -- $(/sbin/ip address | egrep " eth.* UP ")
@@ -61,6 +62,7 @@ sed -i "s@^127.*${hostname}@${ip}\t${hostname}.$(dnsdomainname)\t${hostname}@" /
 apt-get update
 if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
     # A blade.
+    echo "=> Generic blade installation."
 
     apt-get update
 
@@ -68,19 +70,50 @@ if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
     apt-get -y dist-upgrade
 
     # Install the HP utilities, dbconfig and Openstack packaging tools.
-    do_install hp-snmp-agents hponcfg dbconfig-mysql openstack-pkg-tools
+    do_install hp-snmp-agents hponcfg dbconfig-mysql openstack-pkg-tools \
+	    vlan openvswitch-switch
     sed -i "s@'false'@'true'@" /etc/dbconfig-common/config
 
     # Remove the 4.6.0 kernel (it does not come with "aufs", which we'll need
     # for Docker). Should leave us with only 3.16.0.
     dpkg --purge linux-image-4.6.0-1-amd64 linux-image-amd64
+
+    # Setup internal network.
+    ipnr="$(echo "${ip}" | sed 's@.*\.@@')"
+    cat <<EOF >> /etc/network/interfaces
+
+auto eth0
+iface eth0 inet static
+	address 10.99.0.${ipnr}
+	netmask 255.255.255.0
+	network 10.99.0.0
+	broadcast 10.99.0.255
+EOF
+    ifup eth0
+
+    # Disable IPv6.
+    cat <<EOF > /etc/sysctl.conf
+
+# Disable IPv6.
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+net.ipv6.conf.eth0.disable_ipv6 = 1
+net.ipv6.conf.eth1.disable_ipv6 = 1
+EOF
+    sysctl -p
+
+    # Get the Openstack RC file. Going to need that both in the testing of
+    # Keystone as well as local Openstack configuration further down.
+    curl -s http://${LOCALSERVER}/PXEBoot/admin-openrc > /root/admin-openrc
+    . /root/admin-openrc
 fi
 
 nr="$(echo "${hostname}" | \
     sed -e 's@.*blade[A-Z]@@i' -e 's@^0@@' -e 's@[a-z]$@@')"
 if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     # => A Compute node!
-    echo
+    echo "=> Installing a Compute node."
 
     # Preseed debconf
     curl -s http://${LOCALSERVER}/PXEBoot/debconf_openstack-compute.txt | \
@@ -112,7 +145,8 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     # Install the Compute packages.
     # nova-compute-ironic : Conflicts: nova-compute-kvm but 2:13.0.0-4 is to be installed
     # nova-compute-kvm : Conflicts: nova-compute-ironic but 2:13.0.0-4 is to be installed
-    do_install nova-compute-kvm nova-console magnum-conductor fping
+    do_install nova-compute-kvm nova-console magnum-conductor fping \
+        neutron-openvswitch-agent neutron-lbaas-agent designate-agent
 
     # ======================================================================
 
@@ -133,6 +167,7 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     /etc/init.d/docker restart
 elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     # => A Control node
+    echo "=> Installing a Control node."
 
     # Preseed debconf
     curl -s http://${LOCALSERVER}/PXEBoot/debconf_openstack-control.txt | \
@@ -155,6 +190,9 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
         cfg="/etc/mysql/mysql.conf.d/mysqld.cnf" || \
         cfg="/etc/mysql/mariadb.conf.d/50-server.cnf"
     sed -i "s@^bind-address[ \t].*@bind-address\t= 0.0.0.0@" "${cfg}"
+    sed -i "s@^#max_connections[ \t].*@max_connections\t=5000@" "${cfg}"
+    echo "SET GLOBAL max_connections = 5000;" | \
+        mysql -uroot -p74PAGmrp7thXvbgQ6B9n -hlocalhost mysql
     /etc/init.d/mysql restart
 
     # ======================================================================
@@ -198,17 +236,13 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
 
     # Prepare the configuration of the dashboard.
     mkdir -p /etc/openstack-dashboard
-    curl -s http://${LOCALSERVER}/PXEBoot/dashboard.conf > /etc/openstack-dashboard/local_settings.py
+    curl -s http://${LOCALSERVER}/PXEBoot/dashboard.conf > \
+	    /etc/openstack-dashboard/local_settings.py
 
     # Install Openstack Authentication server and the 'openstack' script
     # as well as the dashboard.
     do_install keystone python-keystone python-openstackclient \
         openstack-dashboard-apache cryptsetup
-
-    # Get the Openstack RC file. Going to need that both in the testing of
-    # Keystone as well as local Openstack configuration further down.
-    curl -s http://${LOCALSERVER}/PXEBoot/admin-openrc > /root/admin-openrc
-    . /root/admin-openrc
 
     # Just double check - if we can't retrieve the user list, exit here,
     # no point in continuing installing on a broken system (if Keystone
@@ -227,7 +261,7 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
 
     # ======================================================================
 
-    # Setup a API package list variable
+    # Setup a API package list variable.
     APIs=""
     for api in barbican-api ceilometer-api cinder-api designate-api \
         glance-api heat-api ironic-api ironic-conductor manila-api \
@@ -237,7 +271,7 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
         APIs="${APIs}${api} "
     done
 
-    # Setup Engine/Server package list variable
+    # Setup Engine/Server package list variable.
     ENGINEs=""
     for engine in heat-engine mistral-engine murano-engine senlin-engine \
         neutron-server zaqar-server
@@ -245,11 +279,23 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
         ENGINEs="${ENGINEs}${engine} "
     done
 
-    # Setup Schedulre package list variable
+    # Setup Schedulre package list variable.
     SCHEDULERs=""
     for scheduler in cinder-scheduler manila-scheduler nova-scheduler
     do
         SCHEDULERs="${SCHEDULERs}${scheduler} "
+    done
+
+    # Setup Agents package list variable.
+    # TODO: ?? Should this be done on the Controller or Compute ??.
+    AGENTs=""
+    for agent in ceilometer-agent-compute ceilometer-agent-ipmi \
+        ceilometer-agent-notification ceilometer-agent-central \
+        designate-agent neutron-dhcp-agent neutron-openvswitch-agent \
+        neutron-plugin-openvswitch-agent neutron-metering-agent \
+        neutron-lbaas-agent neutron-l3-agent
+    do
+        AGENTs="${AGENTs}${agent}"
     done
 
     # Install Openstack services.
@@ -257,15 +303,14 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     # fuel-nailgun-agent fuel-notify fuel-rabbit-fence fuel-umm \
     # fuel-web-apache docker
     # trove-api trove-conductor trove-guestagent trove-taskmanager
-    do_install "${APIs}" "${ENGINEs}" "${SCHEDULERs}" \
-        barbican-keystone-listener barbican-worker ceilometer-agent-compute \
-        ceilometer-agent-ipmi ceilometer-agent-notification \
+    do_install "${APIs}" "${ENGINEs}" "${SCHEDULERs}" "${AGENTs}" \
+        barbican-keystone-listener barbican-worker \
         ceilometer-alarm-notifier ceilometer-collector \
-        ceilometer-agent-central cinder-backup cinder-volume designate \
-        designate-agent designate-central designate-mdns \
+        cinder-backup cinder-volume designate designate-central designate-mdns \
         designate-pool-manager designate-sink designate-zone-manager \
         glance glance-glare glance-registry glances ironic-fa-deploy \
-        ironic-inspector manila-share mistral-executor nova-volume  
+        ironic-inspector manila-share mistral-executor nova-volume \
+        openvswitch-switch haproxy
 
     # ======================================================================
 
@@ -277,9 +322,11 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     # RabbitMQ is notoriously sucky and unstable and crashes all the effin time!
     # So install a script that checks it once a minut and if it's dead, restart
     # it.
-    curl -s http://${LOCALSERVER}/PXEBoot/check_rabbitmq.sh > /usr/local/sbin/check_rabbitmq.sh
+    curl -s http://${LOCALSERVER}/PXEBoot/check_rabbitmq.sh > \
+	    /usr/local/sbin/check_rabbitmq.sh
     chmod +x /usr/local/sbin/check_rabbitmq.sh
-    echo "*/1 * * * *	root	/usr/local/sbin/check_rabbitmq.sh" > /etc/cron.d/rabbitmq
+    echo "*/1 * * * *	root	/usr/local/sbin/check_rabbitmq.sh" > \
+	    /etc/cron.d/rabbitmq
 
     # Do local setup of Openstack.
     curl -s http://${LOCALSERVER}/PXEBoot/local_setup_openstack-control.sh > \
@@ -313,4 +360,4 @@ apt-get clean
 sed -i "s@^\(sh /var/tmp/rc\.install.*\)\$@#\1@" /etc/rc.local
 touch /var/tmp/rc.install.done
 
-echo "=> W E ' R E   A L L   D O N E :" $(date) " <="
+echo "=> W E ' R E   A L L   D O N E : $(date) <="
