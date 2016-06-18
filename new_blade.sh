@@ -6,13 +6,16 @@ do_install() {
     apt-get -y --no-install-recommends install $*
 }
 
+export LOCALSERVER="localserver"
+
 set -ex
 
 export DEBIAN_FRONTEND="noninteractive"
 
 # Get the basic setup files (ssh/gpg keys etc)
 cd /var/tmp
-wget http://localserver/PXEBoot/new_blade.tgz
+wget http://${LOCALSERVER}/PXEBoot/new_blade.tgz
+wget http://${LOCALSERVER}/PXEBoot/rc.install
 cd /
 
 # Unpack the basic setup files
@@ -29,9 +32,6 @@ apt-key adv --keyserver keyserver.ubuntu.com --recv-keys FADD8D64B1275EA3 # HPE
 hostname="$(cat /etc/hostname)"
 if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
     # A blade!
-
-    do_install hp-snmp-agents hponcfg dbconfig-mysql
-    sed -i "s@'false'@'true'@" /etc/dbconfig-common/config
 
     # Need to do the rest of the install after a reboot, in the "real"
     # OS. This because systemd refuses to start MySQL etc in the chroot.
