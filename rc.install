@@ -1,10 +1,11 @@
 #!/bin/sh
 
 # PXE auto installer - PART TWO
-
-# We're going to need MySQL etc, etc be up and running
-# to be able to do the install, so this needs to be run
-# in the real FS after the D-I install.
+# NOTE: This is run from /etc/rc.local after D-I have rebooted
+#       the machine.
+#       We're going to need MySQL etc, etc be up and running to
+#       be able to do the install, so this needs to be run in
+#       the real FS after the D-I install.
 
 do_install() {
     apt-get -y --no-install-recommends install $*
@@ -12,15 +13,23 @@ do_install() {
 
 get_debconf_value () {
     debconf-get-selections | \
-        egrep "^${1}[ $(printf '\t')].*${2}" | \
+        egrep "^${1}[ $(printf '\t')].*${2}[ $(printf '\t')]" | \
         sed 's@.*[ \t]@@'
 }
 
-LOCALSERVER="localserver"
+ini_unset_value () {
+    local file="$1"
+    local value="$2"
+
+    sed -i "s@^\(${value}[ \t]\)=.*@#\1 = <None>@" "${file}"
+}
+
+LOCALSERVER="server.domain.tld"
 LOGFILE="/var/tmp/rc.install.log"
+PKGOS_VERBOSE=yes
 [ -z "${DEBIAN_FRONTEND}" ] && DEBIAN_FRONTEND="noninteractive"
 [ -z "${SQLDB}" ] && SQLDB="mysql" # mariadb - !!DOES NOT WORK!!
-export LOCALSERVER LOGFILE DEBIAN_FRONTEND SQLDB
+export LOCALSERVER LOGFILE DEBIAN_FRONTEND SQLDB PKGOS_VERBOSE
 
 if [ "${1}" = "reset" ]; then
     dpkg --purge mysql-server-5.6 rabbitmq-server keystone
@@ -64,18 +73,22 @@ if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
     # A blade.
     echo "=> Generic blade installation."
 
-    apt-get update
-
     # Upgrade system to Sid.
+    apt-get update
     apt-get -y dist-upgrade
+
+    # Need to modify sshd config in Sid. TODO: Generate new, personal, ssh keys.
+    echo 'PubkeyAcceptedKeyTypes=+ssh-dss' >> /etc/ssh/sshd_config
+    systemctl restart ssh
 
     # Install the HP utilities, dbconfig and Openstack packaging tools.
     do_install hp-snmp-agents hponcfg dbconfig-mysql openstack-pkg-tools \
-	    vlan openvswitch-switch
+        vlan openvswitch-switch
     sed -i "s@'false'@'true'@" /etc/dbconfig-common/config
 
     # Remove the 4.6.0 kernel (it does not come with "aufs", which we'll need
-    # for Docker). Should leave us with only 3.16.0.
+    # for Docker). Should leave us with only 3.16.0. We remove it so that
+    # it's not accidentally booted.
     dpkg --purge linux-image-4.6.0-1-amd64 linux-image-amd64
 
     # Setup internal network.
@@ -159,12 +172,6 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     curl -s http://${LOCALSERVER}/PXEBoot/install_nova_docker.sh > \
         /var/tmp/install_nova_docker.sh
     sh /var/tmp/install_nova_docker.sh
-
-    # Make sure Docker start correctly.
-    echo "" >> /etc/default/docker
-    echo "DOCKER_OPTS=\"-H fd:// -H unix:///var/run/docker.sock -H tcp://127.0.0.1:2375\"" \
-        >> /etc/default/docker
-    /etc/init.d/docker restart
 elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     # => A Control node
     echo "=> Installing a Control node."
@@ -192,7 +199,7 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     sed -i "s@^bind-address[ \t].*@bind-address\t= 0.0.0.0@" "${cfg}"
     sed -i "s@^#max_connections[ \t].*@max_connections\t=5000@" "${cfg}"
     echo "SET GLOBAL max_connections = 5000;" | \
-        mysql -uroot -p74PAGmrp7thXvbgQ6B9n -hlocalhost mysql
+        mysql -uroot -psecret09 -hlocalhost mysql
     /etc/init.d/mysql restart
 
     # ======================================================================
@@ -211,7 +218,7 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     # Properly seed dbconfig - It's not enough to just have it in the debconf
     # db, we also need to create the config files for dbconfig-common to use.
     for app in barbican cinder designate glance heat ironic magnum manila \
-        mistral murano neutron nova-api nova senlin keystone
+        mistral murano neutron nova-api nova senlin keystone trove
     do
         if [ "${app}" = "keystone" -o "${app}" = "nova-api" ]; then
             pkg="${app}"
@@ -237,22 +244,20 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     # Prepare the configuration of the dashboard.
     mkdir -p /etc/openstack-dashboard
     curl -s http://${LOCALSERVER}/PXEBoot/dashboard.conf > \
-	    /etc/openstack-dashboard/local_settings.py
+        /etc/openstack-dashboard/local_settings.py
 
     # Install Openstack Authentication server and the 'openstack' script
     # as well as the dashboard.
-    do_install keystone python-keystone python-openstackclient \
-        openstack-dashboard-apache cryptsetup
+    do_install keystone python-keystone python-openstackclient cryptsetup #\
+#        openstack-dashboard-apache 
+#        python-designate-dashboard python-murano-dashboard python-manila-ui \
+#        python-trove-dashboard
+# TODO: Broken dependencies.
 
     # Just double check - if we can't retrieve the user list, exit here,
     # no point in continuing installing on a broken system (if Keystone
     # isn't working, nothing will).
     openstack user list | grep -q admin || exit 1
-
-    # Get the ssh key for Cinder and Nova.
-    curl -s http://${LOCALSERVER}/PXEBoot/id_rsa-control > /etc/cinder/sshkey
-    chown cinder:root /etc/cinder/sshkey ; chmod 0600 /etc/cinder/sshkey
-    cp /etc/cinder/sshkey /etc/nova/sshkey ; chown nova:root /etc/nova/sshkey
 
     # ======================================================================
 
@@ -268,7 +273,7 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
         mistral-api murano-api senlin-api nova-api nova-conductor \
         magnum-api magnum-conductor
     do
-        APIs="${APIs}${api} "
+        APIs="${APIs} ${api} "
     done
 
     # Setup Engine/Server package list variable.
@@ -276,14 +281,14 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     for engine in heat-engine mistral-engine murano-engine senlin-engine \
         neutron-server zaqar-server
     do
-        ENGINEs="${ENGINEs}${engine} "
+        ENGINEs="${ENGINEs} ${engine} "
     done
 
-    # Setup Schedulre package list variable.
+    # Setup Schedulers package list variable.
     SCHEDULERs=""
     for scheduler in cinder-scheduler manila-scheduler nova-scheduler
     do
-        SCHEDULERs="${SCHEDULERs}${scheduler} "
+        SCHEDULERs="${SCHEDULERs} ${scheduler} "
     done
 
     # Setup Agents package list variable.
@@ -291,26 +296,36 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     AGENTs=""
     for agent in ceilometer-agent-compute ceilometer-agent-ipmi \
         ceilometer-agent-notification ceilometer-agent-central \
-        designate-agent neutron-dhcp-agent neutron-openvswitch-agent \
-        neutron-plugin-openvswitch-agent neutron-metering-agent \
+        designate-agent neutron-dhcp-agent neutron-metering-agent \
         neutron-lbaas-agent neutron-l3-agent
     do
-        AGENTs="${AGENTs}${agent}"
+        AGENTs="${AGENTs} ${agent}"
+    done
+
+    # Setup Open vSwitch packages.
+    OPENvSWITCHs=""
+    for pkg in openvswitch-switch neutron-openvswitch-agent \
+        neutron-plugin-openvswitch-agent 
+    do
+        OPENvSWITCHs="${OPENvSWITCHs} ${pkg}"
     done
 
     # Install Openstack services.
+    # TODO: !! Isn't completely packaged yet !!
     # fuel-agent fuel-ha-utils fuel-library fuel-migrate fuel-misc \
     # fuel-nailgun-agent fuel-notify fuel-rabbit-fence fuel-umm \
-    # fuel-web-apache docker
-    # trove-api trove-conductor trove-guestagent trove-taskmanager
+    # fuel-web-apache
+    #
+    # TODO: !! MySQL errors !!
+    # trove-api trove-guestagent trove-conductor trove-taskmanager 
     do_install "${APIs}" "${ENGINEs}" "${SCHEDULERs}" "${AGENTs}" \
-        barbican-keystone-listener barbican-worker \
-        ceilometer-alarm-notifier ceilometer-collector \
-        cinder-backup cinder-volume designate designate-central designate-mdns \
+        "${OPENvSWITCHs}" barbican-keystone-listener barbican-worker \
+        ceilometer-alarm-notifier ceilometer-collector cinder-backup \
+        cinder-volume designate designate-central designate-mdns \
         designate-pool-manager designate-sink designate-zone-manager \
         glance glance-glare glance-registry glances ironic-fa-deploy \
         ironic-inspector manila-share mistral-executor nova-volume \
-        openvswitch-switch haproxy
+        haproxy nfs-kernel-server
 
     # ======================================================================
 
@@ -319,38 +334,29 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
 
     # ======================================================================
 
+    # Get the ssh key for Cinder and Nova.
+    curl -s http://${LOCALSERVER}/PXEBoot/id_rsa-control > /etc/cinder/sshkey
+    chown cinder:root /etc/cinder/sshkey ; chmod 0600 /etc/cinder/sshkey
+    cp /etc/cinder/sshkey /etc/nova/sshkey ; chown nova:root /etc/nova/sshkey
+
     # RabbitMQ is notoriously sucky and unstable and crashes all the effin time!
     # So install a script that checks it once a minut and if it's dead, restart
     # it.
     curl -s http://${LOCALSERVER}/PXEBoot/check_rabbitmq.sh > \
-	    /usr/local/sbin/check_rabbitmq.sh
+        /usr/local/sbin/check_rabbitmq.sh
     chmod +x /usr/local/sbin/check_rabbitmq.sh
     echo "*/1 * * * *	root	/usr/local/sbin/check_rabbitmq.sh" > \
-	    /etc/cron.d/rabbitmq
-
-    # Do local setup of Openstack.
-    curl -s http://${LOCALSERVER}/PXEBoot/local_setup_openstack-control.sh > \
-        /var/tmp/local_setup_openstack-control.sh
-    sh -x /var/tmp/local_setup_openstack-control.sh
+        /etc/cron.d/rabbitmq
 
     # Install the ZFS/ZoL Openstack Cinder plugin.
     curl -s http://${LOCALSERVER}/PXEBoot/install_cinder_zfs.sh > \
         /var/tmp/install_cinder_zfs.sh
     sh -x /var/tmp/install_cinder_zfs.sh
 
-    # Import a bunch of external images.
-    # Need to run this with nohup in the background, because this will
-    # take a while!
-    curl -s http://${LOCALSERVER}/PXEBoot/install_images.sh \
-        /var/tmp/install_images.sh
-    nohup sh -x /var/tmp/install_images.sh &
-
-    # Create a LVM on /dev/sdb.
-    if [ -e "/dev/sdb" ]; then
-        for init in /etc/init.d/lvm2*; do $init start; done
-        pvcreate /dev/sdb
-        vgcreate blade_center /dev/sdb
-    fi
+    # Do local setup of Openstack.
+    curl -s http://${LOCALSERVER}/PXEBoot/local_setup_openstack-control.sh > \
+        /var/tmp/local_setup_openstack-control.sh
+    sh -x /var/tmp/local_setup_openstack-control.sh
 fi
 
 #apt-get -y remove openstack-pkg-tools

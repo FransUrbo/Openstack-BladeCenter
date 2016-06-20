@@ -4,15 +4,24 @@
 # https://github.com/tparker00/Openstack-ZFS
 
 exit 0 # Not yet..
-set -ex
 
 if [ ! -e /usr/share/openstack-pkg-tools/pkgos_func ]; then
     echo "ERROR: openstack-pkg-tools not installed"
     exit 1
+else
+    . /usr/share/openstack-pkg-tools/pkgos_func
+    export PKGOS_VERBOSE=yes
 fi
 
-. /usr/share/openstack-pkg-tools/pkgos_func
-export PKGOS_VERBOSE=yes
+if [ ! -e "admin-openrc" ]; then
+    echo "The admin-openrc file don't exists."
+    exit 1
+else
+    set +x # Disable showing commands this do (password especially).
+    . /root/admin-openrc
+fi
+
+set -xe
 
 # Get IP of this host
 set -- $(/sbin/ip address | egrep " eth.* UP ")
@@ -39,32 +48,35 @@ chmod +x /usr/local/sbin/zfswrapper
 cat <<EOF >> /etc/cinder/rootwrap.d/volume.filters
 
 # ZFS/ZoL plugin
-#zfs: CommandFilter, /sbin/zfs, root
+zfs: CommandFilter, /sbin/zfs, root
 EOF
 
 cat <<EOF >> /etc/cinder/cinder.conf
 
 # ZFS/ZoL driver - https://github.com/tparker00/Openstack-ZFS
 [zol]
-volume_driver=cinder.volume.zol.ZFSonLinuxISCSIDriver
-volume_group=share/BladeCenter
-iscsi_ip_prefix=192.168.69.8
-iscsi_ip_address=${ip}
-san_thin_provision=false
-san_ip=${ip}
-san_zfs_volume_base=share/BladeCenter
-san_is_local=false
-san_login=root
-san_private_key=/etc/nova/sshkey
-use_cow_images=false
-san_zfs_command=/usr/local/sbin/zfswrapper
-verbose=true
+volume_driver = cinder.volume.zol.ZFSonLinuxISCSIDriver
+volume_group = share/VirtualMachines/Blade_Center
+volume_backend_name = ZFS_iSCSI
+iscsi_ip_prefix = 192.168.69.8
+iscsi_ip_address = ${ip}
+san_thin_provision = false
+san_ip = ${ip}
+san_zfs_volume_base = share/VirtualMachines/Blade_Center
+san_is_local = false
+san_login = root
+san_private_key = /etc/nova/sshkey
+use_cow_images = false
+san_zfs_command = /usr/local/sbin/zfswrapper
+verbose = true
 EOF
 
 pkgos_inifile get /etc/cinder/cinder.conf DEFAULT enabled_backends
 [ -n "${RET}" ] && RET="${RET},"
-pkgos_inifile set /etc/cinder/cinder.conf DEFAULT enabled_backends ${RET}zol
+pkgos_inifile set /etc/cinder/cinder.conf DEFAULT enabled_backends "${RET}zol"
 for init in /etc/init.d/cinder-*; do $init restart; done
+openstack volume type create --description "ZFS volumes" --public zfs
+openstack volume type set --property volume_backend_name=ZFS_iSCSI zfs
 
 # Get the Cinder ZFS/ZoL ssh keys to use with ZFS/ZoL SAN.
 curl -s http://${LOCALSERVER}/PXEBoot/var/www/PXEBoot/id_rsa-control > /etc/nova/sankey

@@ -1,6 +1,17 @@
 #!/bin/sh
 
-set -xe
+get_debconf_value () {
+    debconf-get-selections | \
+        egrep "^${1}[ $(printf '\t')].*${2}[ $(printf '\t')]" | \
+        sed 's@.*[ \t]@@'
+}
+
+ini_unset_value () {
+    local file="$1"
+    local value="$2"
+
+    sed -i "s@^\(${value}[ \t]\)=.*@#\1 = <None>@" "${file}"
+}
 
 if [ ! -e /usr/share/openstack-pkg-tools/pkgos_func ]; then
     echo "ERROR: openstack-pkg-tools not installed"
@@ -10,18 +21,20 @@ else
     export PKGOS_VERBOSE=yes
 fi
 
-if [ ! -e "admin-openrc" ]; then
-    echo "The admin-openrc file don't exists."
+if [ ! -e "/root/admin-openrc" ]; then
+    echo "The /root/admin-openrc file don't exists."
     exit 1
 else
     set +x # Disable showing commands this do (password especially).
     . /root/admin-openrc
 fi
 
-set -x
+set -xe
+
+# ======================================================================
 
 # Get IP of this host
-set -- $(/sbin/ip address | egrep " eth1.* UP ")
+set -- $(/sbin/ip address | egrep " eth.* UP ")
 iface="$(echo "${2}" | sed 's@:@@')"
 set -- $(/sbin/ifconfig "${iface}" | grep ' inet ')
 ip="$(echo "${2}" | sed 's@.*:@@')"
@@ -31,8 +44,11 @@ hostname="$(cat /etc/hostname)"
 
 neutron_pass="$(get_debconf_value "neutron-common" "/mysql/app-pass")"
 rabbit_pass="$(get_debconf_value "designate-common" "/rabbit_password")"
+admin_pass="$(get_debconf_value "keystone" "/admin-password")"
+aodh_pass="$(get_debconf_value "aodh-common" "/mysql/app-pass")"
+mongo_ceilodb_pass="$(get_debconf_value "openstack" "/db_password")"
 email="$(get_debconf_value "keystone" "/admin-email")"
-ctrlnode="$(get_debconf_value "keystone" "remote/host")"
+ctrlnode="$(get_debconf_value "keystone" "/remote/host")"
 
 if [ -z "${neutron_pass}" -o -z "${rabbit_pass}" ]; then
     # Just tripple check.
@@ -41,20 +57,66 @@ if [ -z "${neutron_pass}" -o -z "${rabbit_pass}" ]; then
         debconf-set-selections
     neutron_pass="$(get_debconf_value "neutron-common" "/mysql/app-pass")"
     rabbit_pass="$(get_debconf_value "designate-common" "/rabbit_password")"
+    admin_pass="$(get_debconf_value "keystone" "/admin-password")"
+    aodh_pass="$(get_debconf_value "aodh-common" "/mysql/app-pass")"
+    mongo_ceilodb_pass="$(get_debconf_value "openstack" "/db_password")"
 fi
 
 # Setup the bashrc file for Openstack.
 cat <<EOF >> /root/.bashrc
 
 # Openstack specials
-. /root/admin-openrc
-. /usr/share/openstack-pkg-tools/pkgos_func
+do_install() {
+    apt-get -y --no-install-recommends install \$*
+}
+
+get_debconf_value () {
+    debconf-get-selections | \\
+        egrep "^\${1}[ \$(printf '\t')].*\${2}[ \$(printf '\t')]" | \\
+        sed 's@.*[ \t]@@'
+}
+
+ini_unset_value () {
+    local file="\$1"
+    local value="\$2"
+
+    sed -i "s@^\(\${value}[ \t]\)=.*@#\1 = <None>@" "\${file}"
+}
+
+[ -f /root/admin-openrc ] && . /root/admin-openrc
+[ -f /usr/share/openstack-pkg-tools/pkgos_func ] && \\
+    . /usr/share/openstack-pkg-tools/pkgos_func
 export PKGOS_VERBOSE=yes
 EOF
 
 # ======================================================================
 
-# Configure Designate
+# Configure Keystone.
+cp /etc/keystone/keystone.conf /etc/keystone/keystone.conf.orig
+pkgos_inifile set /etc/keystone/keystone.conf database use_db_reconnect true
+pkgos_inifile set /etc/keystone/keystone.conf database db_retry_interval 1
+pkgos_inifile set /etc/keystone/keystone.conf database db_inc_retry_interval true
+pkgos_inifile set /etc/keystone/keystone.conf database db_max_retry_interval 10
+pkgos_inifile set /etc/keystone/keystone.conf database db_max_retries 20
+pkgos_inifile set /etc/keystone/keystone.conf oslo_messaging_rabbit rabbit_host "${ctrlnode}"
+pkgos_inifile set /etc/keystone/keystone.conf oslo_messaging_rabbit rabbit_userid openstack
+pkgos_inifile set /etc/keystone/keystone.conf oslo_messaging_rabbit rabbit_password "${rabbit_pass}"
+#pkgos_inifile set /etc/keystone/keystone.conf ldap url ldap://server.domain.tld
+#pkgos_inifile set /etc/keystone/keystone.conf ldap suffix c=SE
+#pkgos_inifile set /etc/keystone/keystone.conf ldap use_dumb_member true
+#pkgos_inifile set /etc/keystone/keystone.conf ldap dumb_member cn=dumb,dc=nonexistent
+#pkgos_inifile set /etc/keystone/keystone.conf ldap query_scope sub
+#pkgos_inifile set /etc/keystone/keystone.conf ldap user_filter uid=%
+#pkgos_inifile set /etc/keystone/keystone.conf ldap user_objectclass person
+#pkgos_inifile set /etc/keystone/keystone.conf ldap user_id_attribute uid
+#pkgos_inifile set /etc/keystone/keystone.conf ldap user_name_attribute cn
+#pkgos_inifile set /etc/keystone/keystone.conf ldap user_mail_attribute mail
+#pkgos_inifile set /etc/keystone/keystone.conf ldap user_pass_attribute userPassword
+#TODO: [...]
+#ini_unset_value /etc/keystone/keystone.conf admin_token # TODO: !! Nothing works without this !!
+
+# Configure Designate.
+cp /etc/designate/designate.conf /etc/designate/designate.conf.orig
 pkgos_inifile set /etc/designate/designate.conf oslo_messaging_rabbit rabbit_userid openstack
 pkgos_inifile set /etc/designate/designate.conf oslo_messaging_rabbit rabbit_password "${rabbit_pass}"
 pkgos_inifile set /etc/designate/designate.conf oslo_messaging_rabbit rabbit_hosts "${ctrlnode}"
@@ -65,15 +127,32 @@ pkgos_inifile set /etc/designate/designate.conf network_api:neutron admin_userna
 pkgos_inifile set /etc/designate/designate.conf network_api:neutron admin_password "${neutron_pass}"
 pkgos_inifile set /etc/designate/designate.conf network_api:neutron auth_url "http://${ctrlnode}:35357/v2.0"
 pkgos_inifile set /etc/designate/designate.conf network_api:neutron auth_strategy keystone
-for init in /etc/init.d/designate-*; do $init restart; done
 
 # Configure Manila.
+cp /etc/manila/manila.conf /etc/manila/manila.conf.orig
 pkgos_inifile set /etc/manila/manila.conf DEFAULT driver_handles_share_servers True
 pkgos_inifile set /etc/manila/manila.conf DEFAULT service_instance_user True
 pkgos_inifile set /etc/manila/manila.conf DEFAULT storage_availability_zone nova
-for init in /etc/init.d/manila-*; do $init restart; done
+pkgos_inifile set /etc/manila/manila.conf DEFAULT rpc_backend rabbit
+pkgos_inifile set /etc/manila/manila.conf DEFAULT default_share_type default_share_type
+pkgos_inifile set /etc/manila/manila.conf DEFAULT rootwrap_config /etc/manila/rootwrap.conf
+pkgos_inifile set /etc/manila/manila.conf DEFAULT auth_strategy keystone
+pkgos_inifile set /etc/manila/manila.conf DEFAULT memcached_servers 127.0.0.1:11211
+pkgos_inifile set /etc/manila/manila.conf DEFAULT my_ip "${ip}"
+pkgos_inifile set /etc/manila/manila.conf DEFAULT enabled_share_backends lvm
+pkgos_inifile set /etc/manila/manila.conf DEFAULT enabled_share_protocols NFS,CIFS
+cat <<EOF >> /etc/manila/manila.conf
+
+[lvm]
+share_backend_name = LVM
+share_driver = manila.share.drivers.lvm.LVMShareDriver
+driver_handles_share_servers = False
+lvm_share_volume_group = blade_center
+lvm_share_export_ip = 10.0.4.1
+EOF
 
 # Configure Nova.
+cp /etc/nova/nova.conf /etc/nova/nova.conf.orig
 pkgos_inifile set /etc/nova/nova.conf DEFAULT dmz_net 10.99.0.0
 pkgos_inifile set /etc/nova/nova.conf DEFAULT dmz_mask 255.255.255.0
 pkgos_inifile set /etc/nova/nova.conf DEFAULT pybasedir /usr/lib/python2.7/dist-packages
@@ -91,24 +170,41 @@ pkgos_inifile set /etc/nova/nova.conf DEFAULT baremetal_scheduler_default_filter
 pkgos_inifile set /etc/nova/nova.conf DEFAULT my_block_storage_ip \$my_ip
 pkgos_inifile set /etc/nova/nova.conf DEFAULT routing_source_ip \$my_ip
 pkgos_inifile set /etc/nova/nova.conf DEFAULT metadata_host \$my_ip
+pkgos_inifile set /etc/nova/nova.conf DEFAULT instance_usage_audit True
+pkgos_inifile set /etc/nova/nova.conf DEFAULT instance_usage_audit_period Hour
+pkgos_inifile set /etc/nova/nova.conf DEFAULT notify_on_state_change vm_and_task_state
+pkgos_inifile set /etc/nova/nova.conf DEFAULT driver messagingv2
+pkgos_inifile set /etc/nova/nova.conf DEFAULT rpc_backend rabbit
 pkgos_inifile set /etc/nova/nova.conf cinder cross_az_attach True
-pkgos_inifile set /etc/nova/nova.conf neutron url "http://${ctrlnode}:9696/"
-for init in /etc/init.d/nova-*; do $init restart; done
+pkgos_inifile set /etc/nova/nova.conf keystone_authtoken http_connect_timeout 5
+pkgos_inifile set /etc/nova/nova.conf keystone_authtoken http_request_max_retries 3
+pkgos_inifile set /etc/nova/nova.conf keystone_authtoken region_name europe-london
+# TODO: Enable separate account for login.
+#pkgos_inifile set /etc/nova/nova.conf neutron url "http://${ctrlnode}:9696/"
+#pkgos_inifile set /etc/nova/nova.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
+#pkgos_inifile set /etc/nova/nova.conf keystone_authtoken identity_uri "http://${ctrlnode}:35357/v3"
+#pkgos_inifile set /etc/nova/nova.conf keystone_authtoken admin_user nova
+#pkgos_inifile set /etc/nova/nova.conf keystone_authtoken admin_password \
+#    "$(get_debconf_value "openstack" "keystone/password/nova")"
+#pkgos_inifile set /etc/nova/nova.conf keystone_authtoken admin_tenant_name service
+#ini_unset_value /etc/nova/nova.conf auth_host
+#ini_unset_value /etc/nova/nova.conf auth_protocol
 
 # Configure Zaqar.
+cp /etc/zaqar/zaqar.conf /etc/zaqar/zaqar.conf.orig
 pkgos_inifile set /etc/zaqar/zaqar.conf "drivers:management_store:mongodb" database zaqar
 pkgos_inifile set /etc/zaqar/zaqar.conf keystone_authtoken memcached_servers 127.0.0.1:11211
 pkgos_inifile set /etc/zaqar/zaqar.conf DEFAULT unreliable True
 pkgos_inifile set /etc/zaqar/zaqar.conf drivers:transport:wsgi bind "${ip}"
-/etc/init.d/zaqar-server restart
 
 # Configure Cinder.
+cp /etc/cinder/cinder.conf /etc/cinder/cinder.conf.orig
 pkgos_inifile set /etc/cinder/cinder.conf DEFAULT my_ip "${ip}"
 pkgos_inifile set /etc/cinder/cinder.conf DEFAULT volume_group blade_center
 pkgos_inifile set /etc/cinder/cinder.conf DEFAULT storage_availability_zone nova
 pkgos_inifile set /etc/cinder/cinder.conf DEFAULT default_availability_zone nova
 pkgos_inifile set /etc/cinder/cinder.conf DEFAULT scheduler_driver cinder.scheduler.filter_scheduler.FilterScheduler
-# TODO: Not yet.
+# TODO: !! Not yet - as soon as we get Cinder-ZoL plugin to work. !!
 #pkgos_inifile set /etc/cinder/cinder.conf DEFAULT nas_ip 192.168.69.8
 #pkgos_inifile set /etc/cinder/cinder.conf DEFAULT nas_login root
 #pkgos_inifile set /etc/cinder/cinder.conf DEFAULT nas_private_key /etc/cinder/sshkey
@@ -124,19 +220,103 @@ pkgos_inifile set /etc/cinder/cinder.conf DEFAULT backup_name_template '%s.back'
 pkgos_inifile set /etc/cinder/cinder.conf DEFAULT iscsi_helper tgtadm
 pkgos_inifile set /etc/cinder/cinder.conf DEFAULT iscsi_protocol iscsi
 pkgos_inifile set /etc/cinder/cinder.conf DEFAULT volume_dd_blocksize 4M
+pkgos_inifile set /etc/cinder/cinder.conf DEFAULT rpc_backend rabbit
+pkgos_inifile set /etc/cinder/cinder.conf DEFAULT auth_strategy keystone
+pkgos_inifile set /etc/cinder/cinder.conf DEFAULT glance_api_servers "http://${ctrlnode}:9292/"
+pkgos_inifile get /etc/cinder/cinder.conf DEFAULT enabled_backends
+[ -n "${RET}" ] && RET="${RET},"
+pkgos_inifile set /etc/cinder/cinder.conf DEFAULT enabled_backends "${RET}nfs"
+set -i "s@^\(volume_driver[ \t].*\)@#\1@" /etc/cinder/cinder.conf
+pkgos_inifile set /etc/cinder/cinder.conf DEFAULT nfs_shares_config /etc/cinder/nfs.conf
+pkgos_inifile set /etc/cinder/cinder.conf DEFAULT nfs_sparsed_volumes true
+pkgos_inifile set /etc/cinder/cinder.conf DEFAULT enable_v1_api false
+pkgos_inifile set /etc/cinder/cinder.conf DEFAULT enable_v3_api true
+
+pkgos_inifile set /etc/cinder/cinder.conf oslo_messaging_notifications driver messagingv2
 pkgos_inifile set /etc/cinder/cinder.conf keystone_authtoken memcached_servers 127.0.0.1:11211
 pkgos_inifile set /etc/cinder/cinder.conf lvm volume_group blade_center
-for init in /etc/init.d/cinder-*; do $init restart; done
+#TODO: ?? Enable this ??
+#echo "*/5 * * * *	/usr/bin/cinder-volume-usage-audit --send_actions" > \
+#    /etc/cron.d/cinder-volume-usage-audit
+
+# Configure Glance.
+cp /etc/glance/glance-api.conf /etc/glance/glance-api.conf.orig
+pkgos_inifile set /etc/glance/glance-api.conf DEFAULT rpc_backend rabbit
+pkgos_inifile set /etc/glance/glance-api.conf oslo_messaging_notifications driver messagingv2
+pkgos_inifile set /etc/glance/glance-api.conf keystone_authtoken memcached_servers 127.0.0.1:11211
+
+# Configure Ceilometer.
+cp /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.orig
+pkgos_inifile set /etc/ceilometer/ceilometer.conf DEFAULT rpc_backend rabbit
+pkgos_inifile set /etc/ceilometer/ceilometer.conf keystone_authtoken memcached_servers 127.0.0.1:11211
+pkgos_inifile set /etc/ceilometer/ceilometer.conf database connection "mongodb://ceilometer:${mongo_ceilodb_pass}@${ctrlnode}:27017/ceilometer"
+
+# Configure Aodh.
+cp /etc/aodh/aodh.conf /etc/aodh/aodh.conf.orig
+pkgos_inifile set /etc/aodh/aodh.conf DEFAULT rpc_backend rabbit
+pkgos_inifile set /etc/aodh/aodh.conf oslo_messaging_rabbit rabbit_host "${ctrlnode}"
+pkgos_inifile set /etc/aodh/aodh.conf oslo_messaging_rabbit rabbit_userid openstack
+pkgos_inifile set /etc/aodh/aodh.conf oslo_messaging_rabbit rabbit_password "${rabbit_pass}"
+pkgos_inifile set /etc/aodh/aodh.conf database connection "mysql+pymysql://aodh:${aodh_pass}@${ctrlnode}/aodh"
+pkgos_inifile set /etc/aodh/aodh.conf keystone_authtoken memcached_servers 127.0.0.1:11211
+pkgos_inifile set /etc/aodh/aodh.conf keystone_authtoken admin_password "${admin_pass}"
 
 # Configure Neutron.
+cp /etc/neutron/neutron.conf /etc/neutron/neutron.conf.orig
+pkgos_inifile set /etc/neutron/neutron.conf DEFAULT bind_host 0.0.0.0
 pkgos_inifile set /etc/neutron/neutron.conf DEFAULT default_availability_zones nova
 pkgos_inifile set /etc/neutron/neutron.conf DEFAULT availability_zone nova
+# neutron.plugins.openvswitch.ovs_neutron_plugin.OVSNeutronPluginV2                    NEUTRON_PLUGIN_NAME=OpenVSwitch
+# neutron.plugins.linuxbridge.lb_neutron_plugin.LinuxBridgePluginV2                    NEUTRON_PLUGIN_NAME=LinuxBridge
+# neutron.plugins.ml2.plugin.Ml2Plugin                                                 NEUTRON_PLUGIN_NAME=ml2
+# neutron.plugins.ryu.ryu_neutron_plugin.RyuNeutronPluginV2                            NEUTRON_PLUGIN_NAME=RYU
+# neutron.plugins.plumgrid.plumgrid_nos_plugin.plumgrid_plugin.NeutronPluginPLUMgridV2 NEUTRON_PLUGIN_NAME=PLUMgrid
+# neutron.plugins.brocade.NeutronPlugin.BrocadePluginV2                                NEUTRON_PLUGIN_NAME=Brocade
+# neutron.plugins.hyperv.hyperv_neutron_plugin.HyperVNeutronPlugin                     NEUTRON_PLUGIN_NAME=Hyper-V
+# neutron.plugins.bigswitch.plugin.NeutronRestProxyV2                                  NEUTRON_PLUGIN_NAME=BigSwitch
+# neutron.plugins.cisco.network_plugin.PluginV2                                        NEUTRON_PLUGIN_NAME=Cisco
+# neutron.plugins.nicira.NeutronPlugin.NvpPluginV2                                     NEUTRON_PLUGIN_NAME=neutron.plugins.nicira.NeutronPlugin.NvpPluginV2
+# neutron.plugins.midonet.plugin.MidonetPluginV2                                       NEUTRON_PLUGIN_NAME=Midonet
+# neutron.plugins.nec.nec_plugin.NECPluginV2                                           NEUTRON_PLUGIN_NAME=Nec
+# neutron.plugins.metaplugin.meta_neutron_plugin.MetaPluginV2                          NEUTRON_PLUGIN_NAME=MetaPlugin
+# neutron.plugins.mlnx.mlnx_plugin.MellanoxEswitchPlugin                               NEUTRON_PLUGIN_NAME=Mellanox
+# TODO: !! ERROR neutron ImportError: Plugin 'neutron.plugins.openvswitch.ovs_neutron_plugin.OVSNeutronPluginV2' not found !!
+#pkgos_inifile set /etc/neutron/neutron.conf DEFAULT core_plugin neutron.plugins.openvswitch.ovs_neutron_plugin.OVSNeutronPluginV2
+pkgos_inifile set /etc/neutron/neutron.conf DEFAULT core_plugin neutron.plugins.ml2.plugin.Ml2Plugin
+pkgos_inifile set /etc/neutron/neutron.conf keystone_authtoken region_name europe-london
+pkgos_inifile set /etc/neutron/neutron.conf keystone_authtoken http_connect_timeout 5
+pkgos_inifile set /etc/neutron/neutron.conf keystone_authtoken http_request_max_retries 3
+pkgos_inifile set /etc/neutron/neutron.conf keystone_authtoken region_name europe-london
+# TODO: ??
+#pkgos_inifile set /etc/neutron/neutron.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
+#pkgos_inifile set /etc/neutron/neutron.conf keystone_authtoken identity_uri "http://${ctrlnode}:35357/v3"
+#ini_unset_value /etc/neutron/neutron.conf auth_host
+#ini_unset_value /etc/neutron/neutron.conf auth_protocol
+# TODO: Enable separate account for login.
+#pkgos_inifile set /etc/neutron/neutron.conf keystone_authtoken admin_user neutron
+#pkgos_inifile set /etc/neutron/neutron.conf keystone_authtoken admin_password \
+#    "$(get_debconf_value "openstack" "keystone/password/neutron")"
+#pkgos_inifile set /etc/neutron/neutron.conf keystone_authtoken admin_tenant_name service
+
+cp /etc/neutron/dhcp_agent.ini /etc/neutron/dhcp_agent.ini.orig
 pkgos_inifile set /etc/neutron/dhcp_agent.ini DEFAULT force_metadata True
 pkgos_inifile set /etc/neutron/dhcp_agent.ini DEFAULT enable_metadata_network True
 pkgos_inifile set /etc/neutron/dhcp_agent.ini DEFAULT dnsmasq_dns_servers 10.0.0.254
 pkgos_inifile set /etc/neutron/dhcp_agent.ini DEFAULT enable_isolated_metadata True
+pkgos_inifile set /etc/neutron/dhcp_agent.ini DEFAULT ovs_integration_bridge br-physical
+
+cp /etc/neutron/l3_agent.ini /etc/neutron/l3_agent.ini.orig
 pkgos_inifile set /etc/neutron/l3_agent.ini DEFAULT rpc_workers 5
 pkgos_inifile set /etc/neutron/l3_agent.ini DEFAULT rpc_state_report_workers 5
+pkgos_inifile set /etc/neutron/l3_agent.ini DEFAULT external_network_bridge br-provider
+pkgos_inifile set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-physical
+
+cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openvswitch_agent.ini.origp
+pkgos_inifile set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings br-provider
+pkgos_inifile set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs integration_bridge br-physical
+kgos_inifile set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
+
+cp /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugins/ml2/ml2_conf.ini.orig
 pkgos_inifile set /etc/neutron/plugins/ml2/ml2_conf.ini securitygroup firewall_driver iptables_hybrid
 pkgos_inifile get /etc/neutron/plugins/ml2/ml2_conf.ini ml2 type_drivers 
 [ -n "${RET}" ] && RET="${RET},"
@@ -146,17 +326,53 @@ pkgos_inifile get /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_netwo
 [ -n "${RET}" ] && RET="${RET},"
 pkgos_inifile set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks "${RET}provider"
 pkgos_inifile set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_vlan network_vlan_ranges provider
+
+cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
 #pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_providers service_provider LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
 pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_auth auth_url "http://${ctrlnode}:35357/v2.0"
 pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_auth admin_username admi
 pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_auth admin_password "${neutron_pass}"
 pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_auth region europe-london
 #pkgos_inifile set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch # Needs to be done manually
+#
+#lbaas									=> not found
+#lbaasv2								=> not found
+#neutron.lbaas.loadbalancer.LoadBalancer				=> not found
+#neutron.lbaas.loadbalancer:LoadBalancer				=> not found
+#neutron.lbaas.services.loadbalancer.plugin.LoadBalancer		=> not found
+#neutron.lbaas.services.loadbalancer.plugin:LoadBalancer		=> not found
+#neutron.services.loadbalancer.plugin.LoadBalancerPlugin                => not found
+#neutron.services.loadbalancer.plugin:LoadBalancerPlugin                => not found
+#neutron.services.loadbalancer.plugin.LoadBalancerPluginv2		=> not found
+#neutron.services.loadbalancer.plugin:LoadBalancerPluginv2		=> not found
+#neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin		=> not found
+#neutron_lbaas.services.loadbalancer.plugin:LoadBalancerPlugin		=> not found
+#neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2        => not found
+#neutron_lbaas.services.loadbalancer.plugin:LoadBalancerPluginv2        => not found
+#LOADBALANCER:Haproxy:neutron.services.loadbalancer.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
 #if [ "${RET}" != "NO_VALUE" ]; then
 #    [ -n "${RET}" ] && RET="${RET},"
 #    pkgos_inifile set /etc/neutron/neutron.conf DEFAULT service_plugins "${RET}???"
 #fi
-for init in /etc/init.d/neutron-*; do $init restart; done
+
+# ======================================================================
+# Setup MongoDB.
+cp /etc/mongodb.conf /etc/mongodb.conf.orig
+sed -i "s@^bind_ip[ \t].*@bind_ip = 0.0.0.0@" /etc/mongodb.conf
+/etc/init.d/mongodb restart
+mongo --host "${ctrlnode}" --eval "
+  db = db.getSiblingDB(\"ceilometer\");
+  db.addUser({user: \"ceilometer\",
+  pwd: \"${mongo_ceilodb_pass}\",
+  roles: [ \"readWrite\", \"dbAdmin\" ]})"
+
+# ======================================================================
+# Restart all changed servers
+# NOTE: Need to do this before we create networks etc.
+curl -s http://${LOCALSERVER}/PXEBoot/openstack-services > \
+    /etc/init.d/openstack-services
+chmod +x /etc/init.d/openstack-services
+/etc/init.d/openstack-services restart
 
 # ======================================================================
 # Recreate the flavors (with new ones) - the default ones isn't perfect.
@@ -197,9 +413,9 @@ openstack flavor create --ram  8192 --disk 40 --vcpus 4 m4.large
 openstack flavor create --ram 16384 --disk 40 --vcpus 4 m4.xlarge
 
 # ======================================================================
-# Create some security groups.
 
-# Create the new security groups.
+# Create new security groups.
+# TODO: Why isn't this working?
 openstack security group create --description "Allow incoming ICMP connections." icmp
 openstack security group rule create --proto icmp icmp
 openstack security group create --description "Allow incoming SSH connections."  ssh
@@ -230,6 +446,20 @@ openstack security group rule create --proto tcp --dst-port 3306 mysql
 openstack security group rule create --proto udp --dst-port 3306 mysql
 
 # ======================================================================
+# Create service users.
+debconf-get-selections | \
+    grep "^openstack[ $(printf '\t')]keystone/password/" | \
+    while read line; do
+	set -- $(echo "${line}")
+        passwd="${4}"
+        set -- $(echo "${2}" | sed 's@/@ @g')
+        user="${3}"
+
+        openstack user create --project service --project-domain default \
+            --password "${passwd}" "${user}"
+    done
+
+# ======================================================================
 # Create some key pairs.
 curl -s http://${LOCALSERVER}/PXEBoot/id_rsa.pub > /var/tmp/id_rsa.pub
 openstack keypair create --public-key /var/tmp/id_rsa.pub "Turbo Fredriksson"
@@ -250,22 +480,25 @@ openstack aggregate create --zone nova tests
 
 # ======================================================================
 # Create some volume types
-openstack volume type create --description "Encrypted volume" --public encrypted
+openstack volume type create --description "Encrypted volumes" --public encrypted
 cinder encryption-type-create --cipher aes-xts-plain64 --key_size 512 \
     --control_location front-end encrypted LuksEncryptor
-openstack volume type create --description "Local LVM volume" --public local
-openstack volume type create --description "Remote ZFS volume" --public remote
-# TODO: !! Create extra spec key-value pairs for these !!
+openstack volume type create --description "Local LVM volumes" --public lvm
+openstack volume type create --description "Local NFS volumes" --public nfs
+openstack volume type set --property volume_backend_name=LVM_iSCSI lvm
+openstack volume type set --property volume_backend_name=nfsbackend nfs
+# TODO: ?? Create (more) extra spec key-value pairs for these ??
 
 # ======================================================================
-# Setup Open vSwitch
+# Setup Open vSwitch.
+ovs-vsctl del-br br-int
 ovs-vsctl add-br br-physical
 #ovs-vsctl add-port br-physical eth1 # TODO: !! This will cut traffic on eth1 !!
 ovs-vsctl add-br br-provider
 ovs-vsctl add-port br-provider eth0
-pkgos_inifile set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings provider:br-provider
-pkgos_inifile set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
-for init in /etc/init.d/*openvswitch*; do $init restart; done
+# TODO:
+# 2016-06-20 12:16:11.072 7736 ERROR neutron.agent.ovsdb.impl_vsctl [-] Unable to execute ['ovs-vsctl', '--timeout=10', '--oneline', '--format=json', '--', '--if-exists', 'del-port', 'br-physical', 'patch-tun']. Exception: Exit code: 1; Stdin: ; Stdout: ; Stderr: ovs-vsctl: bridge br-physical does not have a port patch-tun
+# 2016-06-20 12:16:11.537 7736 ERROR neutron.plugins.ml2.drivers.openvswitch.agent.ovs_neutron_agent [req-d17e9f19-0a2c-4f86-ac89-7d078842e820 - - - - -] Parsing bridge_mappings failed: Invalid mapping: 'br-provider'. Agent terminated!
 
 # ======================================================================
 # Create network(s), routers etc.
@@ -286,7 +519,48 @@ neutron net-create --shared --provider:network_type gre network-99
 neutron subnet-create --name subnet-99 --dns-nameserver 10.0.0.254 \
     --enable-dhcp --ip-version 4 --gateway 10.99.0.1  network-99 10.99.0.0/24
 
-exit 0
-
 #neutron router-gateway-set --fixed-ip subnet_id=subnet-physical,ip_address=10.0.0.200 \
 #    router-physical physical
+
+# ======================================================================
+# Import a bunch of external images.
+# Need to run this with nohup in the background, because this will
+# take a while!
+curl -s http://${LOCALSERVER}/PXEBoot/install_images.sh > \
+    /var/tmp/install_images.sh
+nohup sh -x /var/tmp/install_images.sh &
+
+# ======================================================================
+# Create a LVM on /dev/sdb.
+if [ -e "/dev/sdb" ]; then
+    dd if=/dev/zero of=/dev/sdb count=1024
+    pvcreate /dev/sdb
+    for init in /etc/init.d/lvm2*; do $init start; done
+    vgcreate blade_center /dev/sdb
+fi
+
+# ======================================================================
+# Setup Cinder-NFS.
+lvcreate -L 50G -n nfs_shares blade_center
+mke2fs -F -j /dev/blade_center/nfs_shares
+mkdir /shares
+mount /dev/blade_center/nfs_shares /shares
+echo "$(hostname):/shares" > /etc/cinder/nfs.conf
+chown root:cinder /etc/cinder/nfs.conf
+chmod 0640 /etc/cinder/nfs.conf
+cat <<EOF >> /etc/cinder/cinder.conf
+volume_backend_name = LVM_iSCSI
+iscsi_ip_address = 10.0.4.1
+
+# NFS driver
+[nfs]
+volume_driver = cinder.volume.drivers.nfs.NfsDriver
+volume_group = blade_center
+volume_backend_name = nfsbackend
+nfs_shares_config = /etc/cinder/nfsshares
+nfs_sparsed_volumes = true
+#nfs_mount_options = 
+EOF
+echo "/shares	*.domain.tld(rw,no_subtree_check,no_root_squash)" >> \
+    /etc/exports
+for init in /etc/init.d/{cinder-*,nfs-kernel-server}; do ${init} restart; done

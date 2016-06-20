@@ -5,7 +5,7 @@ set -xe
 # Import a bunch of external images.
 # http://docs.openstack.org/image-guide/obtain-images.html
 
-if [ ! -e "admin-openrc" ]; then
+if [ ! -e "/root/admin-openrc" ]; then
     echo "The admin-openrc file don't exists."
     exit 1
 else
