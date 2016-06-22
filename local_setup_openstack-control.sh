@@ -42,7 +42,7 @@ ip="$(echo "${2}" | sed 's@.*:@@')"
 # Get the hostname. This is the simplest and fastest.
 hostname="$(cat /etc/hostname)"
 
-neutron_pass="$(get_debconf_value "neutron-common" "/mysql/app-pass")"
+#neutron_pass="$(get_debconf_value "neutron-common" "/mysql/app-pass")"
 rabbit_pass="$(get_debconf_value "designate-common" "/rabbit_password")"
 admin_pass="$(get_debconf_value "keystone" "/admin-password")"
 aodh_pass="$(get_debconf_value "aodh-common" "/mysql/app-pass")"
@@ -113,20 +113,23 @@ pkgos_inifile set /etc/keystone/keystone.conf oslo_messaging_rabbit rabbit_passw
 #pkgos_inifile set /etc/keystone/keystone.conf ldap user_mail_attribute mail
 #pkgos_inifile set /etc/keystone/keystone.conf ldap user_pass_attribute userPassword
 #TODO: [...]
-#ini_unset_value /etc/keystone/keystone.conf admin_token # TODO: !! Nothing works without this !!
+#http://docs.openstack.org/admin-guide/keystone_integrate_with_ldap.html
+#ini_unset_value /etc/keystone/keystone.conf admin_token # TODO: ?? Nothing works without this ??
 
 # Configure Designate.
 cp /etc/designate/designate.conf /etc/designate/designate.conf.orig
+pkgos_inifile set /etc/designate/designate.conf DEFAULT auth_strategy keystone
+pkgos_inifile set /etc/designate/designate.conf service:api auth_strategy keystone
 pkgos_inifile set /etc/designate/designate.conf oslo_messaging_rabbit rabbit_userid openstack
 pkgos_inifile set /etc/designate/designate.conf oslo_messaging_rabbit rabbit_password "${rabbit_pass}"
 pkgos_inifile set /etc/designate/designate.conf oslo_messaging_rabbit rabbit_hosts "${ctrlnode}"
 pkgos_inifile set /etc/designate/designate.conf service:central managed_resource_email "${email}"
 pkgos_inifile set /etc/designate/designate.conf pool_manager_cache:memcache memcached_servers 127.0.0.1:11211
 pkgos_inifile set /etc/designate/designate.conf network_api:neutron endpoints "europe-london\|http://${ctrlnode}:9696/"
-pkgos_inifile set /etc/designate/designate.conf network_api:neutron admin_username admin
-pkgos_inifile set /etc/designate/designate.conf network_api:neutron admin_password "${neutron_pass}"
-pkgos_inifile set /etc/designate/designate.conf network_api:neutron auth_url "http://${ctrlnode}:35357/v2.0"
-pkgos_inifile set /etc/designate/designate.conf network_api:neutron auth_strategy keystone
+# TODO
+#pkgos_inifile set /etc/designate/designate.conf network_api:neutron admin_username admin
+#pkgos_inifile set /etc/designate/designate.conf network_api:neutron admin_password "${neutron_pass}"
+#pkgos_inifile set /etc/designate/designate.conf network_api:neutron auth_url "http://${ctrlnode}:35357/v2.0"
 
 # Configure Manila.
 cp /etc/manila/manila.conf /etc/manila/manila.conf.orig
@@ -153,6 +156,7 @@ EOF
 
 # Configure Nova.
 cp /etc/nova/nova.conf /etc/nova/nova.conf.orig
+pkgos_inifile set /etc/nova/nova.conf DEFAULT auth_strategy keystone
 pkgos_inifile set /etc/nova/nova.conf DEFAULT dmz_net 10.99.0.0
 pkgos_inifile set /etc/nova/nova.conf DEFAULT dmz_mask 255.255.255.0
 pkgos_inifile set /etc/nova/nova.conf DEFAULT pybasedir /usr/lib/python2.7/dist-packages
@@ -192,9 +196,10 @@ pkgos_inifile set /etc/nova/nova.conf keystone_authtoken region_name europe-lond
 
 # Configure Zaqar.
 cp /etc/zaqar/zaqar.conf /etc/zaqar/zaqar.conf.orig
+pkgos_inifile set /etc/zaqar/zaqar.conf DEFAULT unreliable True
+pkgos_inifile set /etc/zaqar/zaqar.conf DEFAULT auth_strategy keystone
 pkgos_inifile set /etc/zaqar/zaqar.conf "drivers:management_store:mongodb" database zaqar
 pkgos_inifile set /etc/zaqar/zaqar.conf keystone_authtoken memcached_servers 127.0.0.1:11211
-pkgos_inifile set /etc/zaqar/zaqar.conf DEFAULT unreliable True
 pkgos_inifile set /etc/zaqar/zaqar.conf drivers:transport:wsgi bind "${ip}"
 
 # Configure Cinder.
@@ -259,7 +264,7 @@ pkgos_inifile set /etc/aodh/aodh.conf oslo_messaging_rabbit rabbit_userid openst
 pkgos_inifile set /etc/aodh/aodh.conf oslo_messaging_rabbit rabbit_password "${rabbit_pass}"
 pkgos_inifile set /etc/aodh/aodh.conf database connection "mysql+pymysql://aodh:${aodh_pass}@${ctrlnode}/aodh"
 pkgos_inifile set /etc/aodh/aodh.conf keystone_authtoken memcached_servers 127.0.0.1:11211
-pkgos_inifile set /etc/aodh/aodh.conf keystone_authtoken admin_password "${admin_pass}"
+#pkgos_inifile set /etc/aodh/aodh.conf keystone_authtoken admin_password "${admin_pass}"
 
 # Configure Neutron.
 cp /etc/neutron/neutron.conf /etc/neutron/neutron.conf.orig
@@ -314,7 +319,7 @@ pkgos_inifile set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-ph
 cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openvswitch_agent.ini.origp
 pkgos_inifile set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings br-provider
 pkgos_inifile set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs integration_bridge br-physical
-kgos_inifile set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
+pkgos_inifile set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
 
 cp /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugins/ml2/ml2_conf.ini.orig
 pkgos_inifile set /etc/neutron/plugins/ml2/ml2_conf.ini securitygroup firewall_driver iptables_hybrid
@@ -328,10 +333,11 @@ pkgos_inifile set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_netwo
 pkgos_inifile set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_vlan network_vlan_ranges provider
 
 cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
+# TODO
 #pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_providers service_provider LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
-pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_auth auth_url "http://${ctrlnode}:35357/v2.0"
-pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_auth admin_username admi
-pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_auth admin_password "${neutron_pass}"
+#pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_auth auth_url "http://${ctrlnode}:35357/v2.0"
+#pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_auth admin_username admin
+#pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_auth admin_password "${neutron_pass}"
 pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_auth region europe-london
 #pkgos_inifile set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch # Needs to be done manually
 #
@@ -356,10 +362,18 @@ pkgos_inifile set /etc/neutron/neutron_lbaas.conf service_auth region europe-lon
 #fi
 
 # ======================================================================
+# Setup Ironic
+cp /etc/ironic/ironic.conf /etc/ironic/ironic.conf.orig
+pkgos_inifile set /etc/ironic/ironic.conf DEFAULT auth_strategy keystone
+pkgos_inifile set /etc/ironic/ironic.conf glance auth_strategy keystone
+pkgos_inifile set /etc/ironic/ironic.conf neutron auth_strategy keystone
+
+# ======================================================================
 # Setup MongoDB.
 cp /etc/mongodb.conf /etc/mongodb.conf.orig
 sed -i "s@^bind_ip[ \t].*@bind_ip = 0.0.0.0@" /etc/mongodb.conf
 /etc/init.d/mongodb restart
+sleep 10 # Just give it some time..
 mongo --host "${ctrlnode}" --eval "
   db = db.getSiblingDB(\"ceilometer\");
   db.addUser({user: \"ceilometer\",
@@ -375,78 +389,7 @@ chmod +x /etc/init.d/openstack-services
 /etc/init.d/openstack-services restart
 
 # ======================================================================
-# Recreate the flavors (with new ones) - the default ones isn't perfect.
-
-# Delete all the old ones.
-openstack flavor list -f csv --quote none | \
-    grep -v 'ID' | \
-    while read line; do
-	set -- $(echo "${line}" | sed 's@,@ @g')
-	# name=2, mem=3, disk=4, vcpus=6
-        openstack flavor delete "${2}"
-    done
-
-# Create the new flavors.
-openstack flavor create --ram   512 --disk  2 --vcpus 1 --disk  5 m1.nano
-openstack flavor create --ram  1024 --disk 10 --vcpus 1 --disk  5 m1.tiny
-openstack flavor create --ram  2048 --disk 20 --vcpus 1 --disk 10 m1.small
-openstack flavor create --ram  4096 --disk 40 --vcpus 1 m1.medium
-openstack flavor create --ram  8192 --disk 40 --vcpus 1 m1.large
-openstack flavor create --ram 16384 --disk 40 --vcpus 1 m1.xlarge
-
-openstack flavor create --ram  1024 --disk 10 --vcpus 2 --disk 5 m2.tiny
-openstack flavor create --ram  2048 --disk 20 --vcpus 2 m2.small
-openstack flavor create --ram  4096 --disk 40 --vcpus 2 m2.medium
-openstack flavor create --ram  8192 --disk 40 --vcpus 2 m2.large
-openstack flavor create --ram 16384 --disk 40 --vcpus 2 m2.xlarge
-
-openstack flavor create --ram  1024 --disk 20 --vcpus 3 --disk  5 m3.tiny
-openstack flavor create --ram  2048 --disk 20 --vcpus 3 --disk 10 m3.small
-openstack flavor create --ram  4096 --disk 40 --vcpus 3 m3.medium
-openstack flavor create --ram  8192 --disk 40 --vcpus 3 m3.large
-openstack flavor create --ram 16384 --disk 40 --vcpus 3 m3.xlarge
-
-openstack flavor create --ram  1024 --disk 10 --vcpus 4 --disk  5 m4.tiny
-openstack flavor create --ram  2048 --disk 20 --vcpus 4 --disk 10 m4.small
-openstack flavor create --ram  4096 --disk 40 --vcpus 4 m4.medium
-openstack flavor create --ram  8192 --disk 40 --vcpus 4 m4.large
-openstack flavor create --ram 16384 --disk 40 --vcpus 4 m4.xlarge
-
-# ======================================================================
-
-# Create new security groups.
-# TODO: Why isn't this working?
-openstack security group create --description "Allow incoming ICMP connections." icmp
-openstack security group rule create --proto icmp icmp
-openstack security group create --description "Allow incoming SSH connections."  ssh
-openstack security group rule create --proto tcp --dst-port 22 ssh
-openstack security group rule create --proto udp --dst-port 22 ssh
-openstack security group create --description "Allow incoming HTTP connections." http
-openstack security group rule create --proto tcp --dst-port 80 http
-openstack security group rule create --proto udp --dst-port 80 http
-openstack security group create --description "Allow incoming HTTPS connections." https
-openstack security group rule create --proto tcp --dst-port 443 https
-openstack security group rule create --proto udp --dst-port 443 https
-openstack security group create --description "Allow incoming WEB connections (HTTP && HTTPS)." web
-openstack security group rule create --proto tcp --dst-port 80 web
-openstack security group rule create --proto udp --dst-port 80 web
-openstack security group rule create --proto tcp --dst-port 443 web
-openstack security group rule create --proto udp --dst-port 443 web
-openstack security group create --description "Allow incoming DNS connections." dns
-openstack security group rule create --proto tcp --dst-port 42 dns
-openstack security group rule create --proto udp --dst-port 42 dns
-openstack security group create --description "Allow incoming LDAP connections." ldap
-openstack security group rule create --proto tcp --dst-port 389 ldap
-openstack security group rule create --proto udp --dst-port 389 ldap
-openstack security group create --description "Allow incoming LDAP connections." ldaps
-openstack security group rule create --proto tcp --dst-port 636 ldaps
-openstack security group rule create --proto udp --dst-port 636 ldaps
-openstack security group create --description "Allow incoming MYSQL connections." mysql
-openstack security group rule create --proto tcp --dst-port 3306 mysql
-openstack security group rule create --proto udp --dst-port 3306 mysql
-
-# ======================================================================
-# Create service users.
+# Create services and service users.
 debconf-get-selections | \
     grep "^openstack[ $(printf '\t')]keystone/password/" | \
     while read line; do
@@ -458,12 +401,89 @@ debconf-get-selections | \
         openstack user create --project service --project-domain default \
             --password "${passwd}" "${user}"
     done
+openstack role create compute
+openstack project create compute
+openstack domain create compute
+openstack user create --project compute --domain compute --password omed demo
+
+# ======================================================================
+# Recreate the flavors (with new ones) - the default ones isn't perfect.
+# TODO: !! This require that a nova compute exists apparently !!
+#
+## Delete all the old ones.
+#openstack flavor list -f csv --quote none | \
+#    grep -v 'ID' | \
+#    while read line; do
+#	set -- $(echo "${line}" | sed 's@,@ @g')
+#	# name=2, mem=3, disk=4, vcpus=6
+#        openstack flavor delete "${2}"
+#    done
+#
+## Create the new flavors.
+#openstack flavor create --ram   512 --disk  2 --vcpus 1 --disk  5 m1.nano
+#openstack flavor create --ram  1024 --disk 10 --vcpus 1 --disk  5 m1.tiny
+#openstack flavor create --ram  2048 --disk 20 --vcpus 1 --disk 10 m1.small
+#openstack flavor create --ram  4096 --disk 40 --vcpus 1 m1.medium
+#openstack flavor create --ram  8192 --disk 40 --vcpus 1 m1.large
+#openstack flavor create --ram 16384 --disk 40 --vcpus 1 m1.xlarge
+#
+#openstack flavor create --ram  1024 --disk 10 --vcpus 2 --disk 5 m2.tiny
+#openstack flavor create --ram  2048 --disk 20 --vcpus 2 m2.small
+#openstack flavor create --ram  4096 --disk 40 --vcpus 2 m2.medium
+#openstack flavor create --ram  8192 --disk 40 --vcpus 2 m2.large
+#openstack flavor create --ram 16384 --disk 40 --vcpus 2 m2.xlarge
+#
+#openstack flavor create --ram  1024 --disk 20 --vcpus 3 --disk  5 m3.tiny
+#openstack flavor create --ram  2048 --disk 20 --vcpus 3 --disk 10 m3.small
+#openstack flavor create --ram  4096 --disk 40 --vcpus 3 m3.medium
+#openstack flavor create --ram  8192 --disk 40 --vcpus 3 m3.large
+#openstack flavor create --ram 16384 --disk 40 --vcpus 3 m3.xlarge
+#
+#openstack flavor create --ram  1024 --disk 10 --vcpus 4 --disk  5 m4.tiny
+#openstack flavor create --ram  2048 --disk 20 --vcpus 4 --disk 10 m4.small
+#openstack flavor create --ram  4096 --disk 40 --vcpus 4 m4.medium
+#openstack flavor create --ram  8192 --disk 40 --vcpus 4 m4.large
+#openstack flavor create --ram 16384 --disk 40 --vcpus 4 m4.xlarge
+
+# ======================================================================
+
+# Create new security groups.
+# TODO: !! This require that a nova compute exists apparently !!
+#openstack security group create --description "Allow incoming ICMP connections." icmp
+#openstack security group rule create --proto icmp icmp
+#openstack security group create --description "Allow incoming SSH connections."  ssh
+#openstack security group rule create --proto tcp --dst-port 22 ssh
+#openstack security group rule create --proto udp --dst-port 22 ssh
+#openstack security group create --description "Allow incoming HTTP connections." http
+#openstack security group rule create --proto tcp --dst-port 80 http
+#openstack security group rule create --proto udp --dst-port 80 http
+#openstack security group create --description "Allow incoming HTTPS connections." https
+#openstack security group rule create --proto tcp --dst-port 443 https
+#openstack security group rule create --proto udp --dst-port 443 https
+#openstack security group create --description "Allow incoming WEB connections (HTTP && HTTPS)." web
+#openstack security group rule create --proto tcp --dst-port 80 web
+#openstack security group rule create --proto udp --dst-port 80 web
+#openstack security group rule create --proto tcp --dst-port 443 web
+#openstack security group rule create --proto udp --dst-port 443 web
+#openstack security group create --description "Allow incoming DNS connections." dns
+#openstack security group rule create --proto tcp --dst-port 42 dns
+#openstack security group rule create --proto udp --dst-port 42 dns
+#openstack security group create --description "Allow incoming LDAP connections." ldap
+#openstack security group rule create --proto tcp --dst-port 389 ldap
+#openstack security group rule create --proto udp --dst-port 389 ldap
+#openstack security group create --description "Allow incoming LDAP connections." ldaps
+#openstack security group rule create --proto tcp --dst-port 636 ldaps
+#openstack security group rule create --proto udp --dst-port 636 ldaps
+#openstack security group create --description "Allow incoming MYSQL connections." mysql
+#openstack security group rule create --proto tcp --dst-port 3306 mysql
+#openstack security group rule create --proto udp --dst-port 3306 mysql
 
 # ======================================================================
 # Create some key pairs.
-curl -s http://${LOCALSERVER}/PXEBoot/id_rsa.pub > /var/tmp/id_rsa.pub
-openstack keypair create --public-key /var/tmp/id_rsa.pub "Turbo Fredriksson"
-rm /var/tmp/id_rsa.pub
+# TODO: !! This require that a nova compute exists apparently !!
+#curl -s http://${LOCALSERVER}/PXEBoot/id_rsa.pub > /var/tmp/id_rsa.pub
+#openstack keypair create --public-key /var/tmp/id_rsa.pub "Turbo Fredriksson"
+#rm /var/tmp/id_rsa.pub
 
 # ======================================================================
 # Update the default quota.

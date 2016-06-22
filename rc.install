@@ -199,7 +199,7 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     sed -i "s@^bind-address[ \t].*@bind-address\t= 0.0.0.0@" "${cfg}"
     sed -i "s@^#max_connections[ \t].*@max_connections\t=5000@" "${cfg}"
     echo "SET GLOBAL max_connections = 5000;" | \
-        mysql -uroot -psecret09 -hlocalhost mysql
+        mysql -uroot -psecret11 -hlocalhost mysql
     /etc/init.d/mysql restart
 
     # ======================================================================
@@ -248,11 +248,10 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
 
     # Install Openstack Authentication server and the 'openstack' script
     # as well as the dashboard.
-    do_install keystone python-keystone python-openstackclient cryptsetup #\
-#        openstack-dashboard-apache 
-#        python-designate-dashboard python-murano-dashboard python-manila-ui \
-#        python-trove-dashboard
-# TODO: Broken dependencies.
+    do_install keystone python-keystone python-openstackclient cryptsetup \
+        python-django-horizon=2:9.0.0-3 openstack-dashboard=2:9.0.0-3 \
+        openstack-dashboard-apache 
+# TODO: !! Need to take recompiled 2:9.0.0-3 from my own repo because of roken dependencies. !!
 
     # Just double check - if we can't retrieve the user list, exit here,
     # no point in continuing installing on a broken system (if Keystone
