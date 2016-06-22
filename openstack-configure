@@ -1,0 +1,16 @@
+#!/bin/sh
+
+if [ ! -f "/usr/share/openstack-pkg-tools/pkgos_func" ]; then
+   echo "ERROR: openstack-pkg-tools missing"
+   exit 1
+fi
+
+. /usr/share/openstack-pkg-tools/pkgos_func
+export PKGOS_VERBOSE=yes
+
+pkgos_inifile $*
+
+if [ "${1}" = "get" -a -n "${RET}" -a "${RET}" != "NO_VALUE" ]
+then
+    echo "${RET}"
+fi
