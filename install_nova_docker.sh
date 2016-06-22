@@ -6,13 +6,9 @@ do_install() {
     apt-get -y --no-install-recommends install $*
 }
 
-if [ ! -e /usr/share/openstack-pkg-tools/pkgos_func ]; then
-    echo "ERROR: openstack-pkg-tools not installed"
-    exit 1
-else
-    . /usr/share/openstack-pkg-tools/pkgos_func
-    export PKGOS_VERBOSE=yes
-fi
+curl -s http://${LOCALSERVER}/PXEBoot/openstack-configure > \
+    /usr/local/bin/openstack-configure
+chmod +x /usr/local/bin/openstack-configure
 
 set -ex
 
@@ -29,7 +25,7 @@ cd src/novadocker/
 python setup.py install
 
 # Update Nova config
-pkgos_inifile set /etc/nova/nova-compute.conf DEFAULT compute_driver novadocker.virt.docker.DockerDriver
+openstack-configure set /etc/nova/nova-compute.conf DEFAULT compute_driver novadocker.virt.docker.DockerDriver
 mkdir -p /etc/nova/rootwrap.d
 cat <<EOF > /etc/nova/rootwrap.d/docker.filters
 # nova-rootwrap command filters for setting up network in the docker driver

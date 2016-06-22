@@ -5,14 +5,6 @@
 
 exit 0 # Not yet..
 
-if [ ! -e /usr/share/openstack-pkg-tools/pkgos_func ]; then
-    echo "ERROR: openstack-pkg-tools not installed"
-    exit 1
-else
-    . /usr/share/openstack-pkg-tools/pkgos_func
-    export PKGOS_VERBOSE=yes
-fi
-
 if [ ! -e "admin-openrc" ]; then
     echo "The admin-openrc file don't exists."
     exit 1
@@ -20,6 +12,10 @@ else
     set +x # Disable showing commands this do (password especially).
     . /root/admin-openrc
 fi
+
+curl -s http://${LOCALSERVER}/PXEBoot/openstack-configure > \
+    /usr/local/bin/openstack-configure
+chmod +x /usr/local/bin/openstack-configure
 
 set -xe
 
@@ -71,9 +67,9 @@ san_zfs_command = /usr/local/sbin/zfswrapper
 verbose = true
 EOF
 
-pkgos_inifile get /etc/cinder/cinder.conf DEFAULT enabled_backends
-[ -n "${RET}" ] && RET="${RET},"
-pkgos_inifile set /etc/cinder/cinder.conf DEFAULT enabled_backends "${RET}zol"
+OLD="$(openstack-configure get /etc/cinder/cinder.conf DEFAULT enabled_backends)"
+[ -n "${OLD}" ] && OLD="${OLD},"
+openstack-configure set /etc/cinder/cinder.conf DEFAULT enabled_backends "${OLD}zol"
 for init in /etc/init.d/cinder-*; do $init restart; done
 openstack volume type create --description "ZFS volumes" --public zfs
 openstack volume type set --property volume_backend_name=ZFS_iSCSI zfs

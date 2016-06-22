@@ -31,7 +31,8 @@ PKGOS_VERBOSE=yes
 [ -z "${SQLDB}" ] && SQLDB="mysql" # mariadb - !!DOES NOT WORK!!
 export LOCALSERVER LOGFILE DEBIAN_FRONTEND SQLDB PKGOS_VERBOSE
 
-if [ "${1}" = "reset" ]; then
+if [ "${1}" = "reset" ] && echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"
+then
     dpkg --purge mysql-server-5.6 rabbitmq-server keystone
     curl -s http://${LOCALSERVER}/PXEBoot/debconf_openstack-control.txt | \
         sed 's@\t.*@@' | sort | uniq | \
@@ -122,6 +123,9 @@ EOF
     . /root/admin-openrc
 fi
 
+# Always need NTP!
+do_install ntp ntpdate
+
 nr="$(echo "${hostname}" | \
     sed -e 's@.*blade[A-Z]@@i' -e 's@^0@@' -e 's@[a-z]$@@')"
 if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
@@ -158,8 +162,8 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     # Install the Compute packages.
     # nova-compute-ironic : Conflicts: nova-compute-kvm but 2:13.0.0-4 is to be installed
     # nova-compute-kvm : Conflicts: nova-compute-ironic but 2:13.0.0-4 is to be installed
-    do_install nova-compute-kvm nova-console magnum-conductor fping \
-        neutron-openvswitch-agent neutron-lbaas-agent designate-agent
+    do_install nova-compute-kvm nova-console magnum-conductor fping ovmf \
+        neutron-openvswitch-agent neutron-lbaas-agent designate-agent 
 
     # ======================================================================
 
@@ -268,9 +272,9 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     # Setup a API package list variable.
     APIs=""
     for api in barbican-api ceilometer-api cinder-api designate-api \
-        glance-api heat-api ironic-api ironic-conductor manila-api \
-        mistral-api murano-api senlin-api nova-api nova-conductor \
-        magnum-api magnum-conductor
+        heat-api ironic-api ironic-conductor manila-api mistral-api \
+        murano-api senlin-api nova-api nova-conductor magnum-api \
+        magnum-conductor
     do
         APIs="${APIs} ${api} "
     done
@@ -322,7 +326,7 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
         ceilometer-alarm-notifier ceilometer-collector cinder-backup \
         cinder-volume designate designate-central designate-mdns \
         designate-pool-manager designate-sink designate-zone-manager \
-        glance glance-glare glance-registry glances ironic-fa-deploy \
+        glance glance-glare ironic-fa-deploy \
         ironic-inspector manila-share mistral-executor nova-volume \
         haproxy nfs-kernel-server
 
