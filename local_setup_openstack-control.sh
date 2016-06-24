@@ -43,6 +43,7 @@ neutron_pass="$(get_debconf_value "neutron-common" "/mysql/app-pass")"
 rabbit_pass="$(get_debconf_value "designate-common" "/rabbit_password")"
 admin_pass="$(get_debconf_value "keystone" "/admin-password")"
 aodh_pass="$(get_debconf_value "aodh-common" "/mysql/app-pass")"
+glance_pass="$(get_debconf_value "glance-common" "/mysql/app-pass")"
 mongo_ceilodb_pass="$(get_debconf_value "openstack" "/db_password")"
 email="$(get_debconf_value "keystone" "/admin-email")"
 ctrlnode="$(get_debconf_value "keystone" "/remote/host")"
@@ -54,6 +55,8 @@ then
     echo "Can't get necessary passwords!"
     exit 1
 fi
+
+# ======================================================================
 
 # Setup the bashrc file for Openstack.
 cat <<EOF >> /root/.bashrc
@@ -76,8 +79,31 @@ ini_unset_value () {
     sed -i "s@^\(\${value}[ \t]\)=.*@#\1 = <None>@" "\${file}"
 }
 
-[ -f /root/admin-openrc ] && . /root/admin-openrc
+if [ -f /root/admin-openrc ]; then
+    . /root/admin-openrc
+else
+    echo "WARNING: No /root/admin-openrc."
+fi
 EOF
+
+# Get the ssh key for Cinder and Nova.
+curl -s http://${LOCALSERVER}/PXEBoot/id_rsa-control > /etc/cinder/sshkey
+chown cinder:root /etc/cinder/sshkey ; chmod 0600 /etc/cinder/sshkey
+cp /etc/cinder/sshkey /etc/nova/sshkey ; chown nova:root /etc/nova/sshkey
+
+# RabbitMQ is notoriously sucky and unstable and crashes all the effin time!
+# So install a script that checks it once a minut and if it's dead, restart
+# it.
+curl -s http://${LOCALSERVER}/PXEBoot/check_rabbitmq.sh > \
+    /usr/local/sbin/check_rabbitmq.sh
+chmod +x /usr/local/sbin/check_rabbitmq.sh
+echo "*/1 * * * *	root	/usr/local/sbin/check_rabbitmq.sh" > \
+    /etc/cron.d/rabbitmq
+
+# Install the ZFS/ZoL Openstack Cinder plugin.
+curl -s http://${LOCALSERVER}/PXEBoot/install_cinder_zfs.sh > \
+    /var/tmp/install_cinder_zfs.sh
+sh -x /var/tmp/install_cinder_zfs.sh
 
 # ======================================================================
 
@@ -174,10 +200,13 @@ openstack-configure set /etc/nova/nova.conf cinder cross_az_attach True
 openstack-configure set /etc/nova/nova.conf keystone_authtoken http_connect_timeout 5
 openstack-configure set /etc/nova/nova.conf keystone_authtoken http_request_max_retries 3
 openstack-configure set /etc/nova/nova.conf keystone_authtoken region_name europe-london
+openstack-configure set /etc/nova/nova.conf neutron url "http://${ctrlnode}:9696/"
 openstack-configure set /etc/nova/nova.conf neutron region_name europe-london
 openstack-configure set /etc/nova/nova.conf neutron domain_name default
 openstack-configure set /etc/nova/nova.conf neutron default_domain_name default
 openstack-configure set /etc/nova/nova.conf neutron project_domain_name default
+openstack-configure set /etc/nova/nova.conf neutron project_name service
+openstack-configure set /etc/nova/nova.conf neutron user_domain_name default
 openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
 openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_version 3
 openstack-configure set /etc/nova/nova.conf keystone_authtoken identity_uri "http://${ctrlnode}:35357/v3"
@@ -201,7 +230,6 @@ openstack-configure set /etc/zaqar/zaqar.conf drivers:transport:wsgi bind "${ip}
 # Configure Cinder.
 cp /etc/cinder/cinder.conf /etc/cinder/cinder.conf.orig
 openstack-configure set /etc/cinder/cinder.conf DEFAULT my_ip "${ip}"
-openstack-configure set /etc/cinder/cinder.conf DEFAULT volume_group blade_center
 openstack-configure set /etc/cinder/cinder.conf DEFAULT storage_availability_zone nova
 openstack-configure set /etc/cinder/cinder.conf DEFAULT default_availability_zone nova
 openstack-configure set /etc/cinder/cinder.conf DEFAULT scheduler_driver cinder.scheduler.filter_scheduler.FilterScheduler
@@ -210,6 +238,7 @@ openstack-configure set /etc/cinder/cinder.conf DEFAULT scheduler_driver cinder.
 #openstack-configure set /etc/cinder/cinder.conf DEFAULT nas_login root
 #openstack-configure set /etc/cinder/cinder.conf DEFAULT nas_private_key /etc/cinder/sshkey
 #openstack-configure set /etc/cinder/cinder.conf DEFAULT nas_share_path share/Blade_Center
+openstack-configure set /etc/cinder/cinder.conf DEFAULT volume_group blade_center
 openstack-configure set /etc/cinder/cinder.conf DEFAULT iscsi_target_prefix iqn.2010-10.org.openstack:
 openstack-configure set /etc/cinder/cinder.conf DEFAULT iscsi_port 3260
 openstack-configure set /etc/cinder/cinder.conf DEFAULT iscsi_iotype blockio
@@ -225,14 +254,19 @@ openstack-configure set /etc/cinder/cinder.conf DEFAULT rpc_backend rabbit
 openstack-configure set /etc/cinder/cinder.conf DEFAULT auth_strategy keystone
 openstack-configure set /etc/cinder/cinder.conf DEFAULT glance_api_servers "http://${ctrlnode}:9292/"
 OLD="$(openstack-configure get /etc/cinder/cinder.conf DEFAULT enabled_backends)"
-[ -n "${OLD}" ] && OLD="${OLD},"
-openstack-configure set /etc/cinder/cinder.conf DEFAULT enabled_backends "${OLD}nfs"
+openstack-configure set /etc/cinder/cinder.conf DEFAULT enabled_backends "${OLD:+${OLD},}nfs"
 set -i "s@^\(volume_driver[ \t].*\)@#\1@" /etc/cinder/cinder.conf
 openstack-configure set /etc/cinder/cinder.conf DEFAULT nfs_shares_config /etc/cinder/nfs.conf
 openstack-configure set /etc/cinder/cinder.conf DEFAULT nfs_sparsed_volumes true
 openstack-configure set /etc/cinder/cinder.conf DEFAULT enable_v1_api false
+openstack-configure set /etc/cinder/cinder.conf DEFAULT enable_v2_api true
 openstack-configure set /etc/cinder/cinder.conf DEFAULT enable_v3_api true
-
+openstack-configure set /etc/cinder/cinder.conf DEFAULT glance_host \$my_ip
+openstack-configure set /etc/cinder/cinder.conf DEFAULT glance_port 9292
+openstack-configure set /etc/cinder/cinder.conf DEFAULT volume_topic blade_center
+openstack-configure set /etc/cinder/cinder.conf DEFAULT default_volume_type lvm
+openstack-configure set /etc/cinder/cinder.conf DEFAULT os_region_name europe-london
+openstack-configure set /etc/cinder/cinder.conf DEFAULT osapi_volume_listen 0.0.0.0
 openstack-configure set /etc/cinder/cinder.conf oslo_messaging_notifications driver messagingv2
 openstack-configure set /etc/cinder/cinder.conf keystone_authtoken memcached_servers 127.0.0.1:11211
 openstack-configure set /etc/cinder/cinder.conf lvm volume_group blade_center
@@ -240,11 +274,104 @@ openstack-configure set /etc/cinder/cinder.conf lvm volume_group blade_center
 #echo "*/5 * * * *	/usr/bin/cinder-volume-usage-audit --send_actions" > \
 #    /etc/cron.d/cinder-volume-usage-audit
 
+# ======================================================================
 # Configure Glance.
 cp /etc/glance/glance-api.conf /etc/glance/glance-api.conf.orig
 openstack-configure set /etc/glance/glance-api.conf DEFAULT rpc_backend rabbit
+openstack-configure set /etc/glance/glance-api.conf DEFAULT registry_host "${ip}"
+openstack-configure set /etc/glance/glance-api.conf database use_db_reconnect true
+# TODO: Put images in Cinder
+#openstack-configure set /etc/glance/glance-api.conf glance_store stores cinder,file,http
+#openstack-configure set /etc/glance/glance-api.conf glance_store default_store cinder
+openstack-configure set /etc/glance/glance-api.conf glance_store cinder_os_region_name europe-london
+openstack-configure set /etc/glance/glance-api.conf glance_store cinder_store_auth_address "${ip}"
+openstack-configure set /etc/glance/glance-api.conf glance_store cinder_store_user_name cinder
+openstack-configure set /etc/glance/glance-api.conf glance_store cinder_store_password \
+    "$(get_debconf_value "cinder-common" "cinder/admin-password")"
+openstack-configure set /etc/glance/glance-api.conf glance_store cinder_store_project_name service
+# TODO: Use S3 for image repository
+#openstack-configure set /etc/glance/glance-api.conf glance_store s3_store_host ???
+#openstack-configure set /etc/glance/glance-api.conf glance_store s3_store_access_key ???
+#openstack-configure set /etc/glance/glance-api.conf glance_store s3_store_secret_key ???
+#openstack-configure set /etc/glance/glance-api.conf glance_store s3_store_bucket ???
+#openstack-configure set /etc/glance/glance-api.conf glance_store s3_store_object_buffer_dir /var/lib/glance/images
+#openstack-configure set /etc/glance/glance-api.conf glance_store s3_store_create_bucket_on_put true
 openstack-configure set /etc/glance/glance-api.conf oslo_messaging_notifications driver messagingv2
 openstack-configure set /etc/glance/glance-api.conf keystone_authtoken memcached_servers 127.0.0.1:11211
+
+cp /etc/glance/glance-cache.conf /etc/glance/glance-cache.conf.orig
+openstack-configure set /etc/glance/glance-cache.conf DEFAULT metadata_encryption_key \
+    "$(get_debconf_value "openstack" "glance/metadata_encryption_key")"
+openstack-configure set /etc/glance/glance-cache.conf DEFAULT digest_algorithm sha512
+openstack-configure set /etc/glance/glance-cache.conf DEFAULT image_cache_dir /var/lib/glance/cache
+openstack-configure set /etc/glance/glance-cache.conf DEFAULT registry_host "${ip}"
+
+cp /etc/glance/glance-glare.conf /etc/glance/glance-glare.conf.orig
+openstack-configure set /etc/glance/glance-glare.conf DEFAULT bind_host "${ip}"
+openstack-configure set /etc/glance/glance-glare.conf database connection "mysql+pymysql://glance:${glance_pass}@${ctrlnode}/glance"
+openstack-configure set /etc/glance/glance-glare.conf database use_db_reconnect true
+# TODO: Put images in Cinder
+#openstack-configure set /etc/glance/glance-glare.conf glance_store stores cinder,file,http
+#openstack-configure set /etc/glance/glance-glare.conf glance_store default_store cinder
+# TODO: Use S3 for image repository
+#openstack-configure set /etc/glance/glance-glare.conf glance_store s3_store_host ???
+#openstack-configure set /etc/glance/glance-glare.conf glance_store s3_store_access_key ???
+#openstack-configure set /etc/glance/glance-glare.conf glance_store s3_store_secret_key ???
+#openstack-configure set /etc/glance/glance-glare.conf glance_store s3_store_bucket ???
+#openstack-configure set /etc/glance/glance-glare.conf glance_store s3_store_object_buffer_dir /var/lib/glance/images
+#openstack-configure set /etc/glance/glance-glare.conf glance_store s3_store_create_bucket_on_put true
+openstack-configure set /etc/glance/glance-glare.conf glance_store cinder_os_region_name europe-london
+openstack-configure set /etc/glance/glance-glare.conf glance_store cinder_store_auth_address "${ip}"
+openstack-configure set /etc/glance/glance-glare.conf glance_store cinder_store_user_name cinder
+openstack-configure set /etc/glance/glance-glare.conf glance_store cinder_store_password \
+    "$(get_debconf_value "cinder-common" "cinder/admin-password")"
+openstack-configure set /etc/glance/glance-glare.conf glance_store cinder_store_project_name service
+openstack-configure set /etc/glance/glance-glare.conf keystone_authtoken region_name europe-london
+openstack-configure set /etc/glance/glance-glare.conf keystone_authtoken memcached_servers 127.0.0.1:11211
+openstack-configure set /etc/glance/glance-glare.conf keystone_authtoken auth_host "${ip}"
+openstack-configure set /etc/glance/glance-glare.conf keystone_authtoken auth_protocol http
+openstack-configure set /etc/glance/glance-glare.conf keystone_authtoken admin_user glance
+openstack-configure set /etc/glance/glance-glare.conf keystone_authtoken admin_password \
+    "$(get_debconf_value "glance-common" "glance/admin-password")"
+openstack-configure set /etc/glance/glance-glare.conf keystone_authtoken admin_tenant_name service
+openstack-configure set /etc/glance/glance-glare.conf database connection "mysql+pymysql://glance:${glance_pass}@${ctrlnode}/glance"
+openstack-configure set /etc/glance/glance-glare.conf database use_db_reconnect true
+
+cp /etc/glance/glance-registry.conf /etc/glance/glance-registry.conf.orig
+openstack-configure set /etc/glance/glance-registry.conf DEFAULT bind_host "${ip}"
+openstack-configure set /etc/glance/glance-registry.conf database use_db_reconnect true
+# TODO: Put images in Cinder
+#openstack-configure set /etc/glance/glance-registry.conf glance_store stores cinder,file,http
+#openstack-configure set /etc/glance/glance-registry.conf glance_store default_store cinder
+# TODO: Use S3 for image repository
+#openstack-configure set /etc/glance/glance-registry.conf glance_store s3_store_host ???
+#openstack-configure set /etc/glance/glance-registry.conf glance_store s3_store_access_key ???
+#openstack-configure set /etc/glance/glance-registry.conf glance_store s3_store_secret_key ???
+#openstack-configure set /etc/glance/glance-registry.conf glance_store s3_store_bucket ???
+#openstack-configure set /etc/glance/glance-registry.conf glance_store s3_store_object_buffer_dir /var/lib/glance/images
+#openstack-configure set /etc/glance/glance-registry.conf glance_store s3_store_create_bucket_on_put true
+openstack-configure set /etc/glance/glance-registry.conf glance_store cinder_os_region_name europe-london
+openstack-configure set /etc/glance/glance-registry.conf glance_store cinder_store_auth_address "${ip}"
+openstack-configure set /etc/glance/glance-registry.conf glance_store cinder_store_user_name cinder
+openstack-configure set /etc/glance/glance-registry.conf glance_store cinder_store_password \
+    "$(get_debconf_value "cinder-common" "cinder/admin-password")"
+openstack-configure set /etc/glance/glance-registry.conf glance_store cinder_store_project_name service
+openstack-configure set /etc/glance/glance-registry.conf keystone_authtoken region_name europe-london
+openstack-configure set /etc/glance/glance-registry.conf keystone_authtoken memcached_servers 127.0.0.1:11211
+openstack-configure set /etc/glance/glance-registry.conf oslo_messaging_notifications driver messagingv2
+openstack-configure set /etc/glance/glance-registry.conf oslo_messaging_rabbit rabbit_host "${ctrlnode}"
+openstack-configure set /etc/glance/glance-registry.conf oslo_messaging_rabbit rabbit_userid openstack
+openstack-configure set /etc/glance/glance-registry.conf oslo_messaging_rabbit rabbit_password \
+    "$(get_debconf_value "glance-common" "glance/rabbit_password")"
+
+cp /etc/glance/glance-scrubber.conf /etc/glance/glance-scrubber.conf.orig
+openstack-configure set /etc/glance/glance-scrubber.conf DEFAULT digest_algorithm sha512
+openstack-configure set /etc/glance/glance-scrubber.conf DEFAULT metadata_encryption_key \
+    "$(get_debconf_value "openstack" "glance/metadata_encryption_key")"
+openstack-configure set /etc/glance/glance-scrubber.conf DEFAULT daemon true
+openstack-configure set /etc/glance/glance-scrubber.conf DEFAULT registry_host "${ip}"
+openstack-configure set /etc/glance/glance-scrubber.conf database "mysql+pymysql://glance:${glance_pass}@${ctrlnode}/glance"
+openstack-configure set /etc/glance/glance-scrubber.conf database use_db_reconnect true
 
 # Configure Ceilometer.
 cp /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.orig
@@ -288,16 +415,11 @@ openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken http_connect_timeout 5
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken http_request_max_retries 3
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name europe-london
-# TODO: ??
+# TODO: !! These four don't seem to work !!
 #openstack-configure set /etc/neutron/neutron.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
-#openstack-configure set /etc/neutron/neutron.conf keystone_authtoken identity_uri "http://${ctrlnode}:35357/v3"
+#openstack-configure set /etc/neutron/neutron.conf keystone_authtoken identity_uri "http://${ctrlnode}:35357/"
 #ini_unset_value /etc/neutron/neutron.conf auth_host
 #ini_unset_value /etc/neutron/neutron.conf auth_protocol
-# TODO: Enable separate account for login.
-#openstack-configure set /etc/neutron/neutron.conf keystone_authtoken admin_user neutron
-#openstack-configure set /etc/neutron/neutron.conf keystone_authtoken admin_password \
-#    "$(get_debconf_value "openstack" "keystone/password/neutron")"
-#openstack-configure set /etc/neutron/neutron.conf keystone_authtoken admin_tenant_name service
 
 cp /etc/neutron/dhcp_agent.ini /etc/neutron/dhcp_agent.ini.orig
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT force_metadata True
@@ -320,12 +442,10 @@ openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local
 cp /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugins/ml2/ml2_conf.ini.orig
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini securitygroup firewall_driver iptables_hybrid
 OLD="$(openstack-configure get /etc/neutron/plugins/ml2/ml2_conf.ini ml2 type_drivers)"
-[ -n "${OLD}" ] && OLD="${OLD},"
-openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 type_drivers "${OLD}vlan"
+openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 type_drivers "${OLD:+${OLD},}vlan"
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 extension_drivers port_security
 OLD="$(openstack-configure get /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks)"
-[ -n "${OLD}" ] && OLD="${OLD},"
-openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks "${OLD}provider"
+openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks "${OLD:+${OLD},}provider"
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_vlan network_vlan_ranges provider
 
 cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
@@ -363,12 +483,6 @@ cp /etc/ironic/ironic.conf /etc/ironic/ironic.conf.orig
 openstack-configure set /etc/ironic/ironic.conf DEFAULT auth_strategy keystone
 openstack-configure set /etc/ironic/ironic.conf glance auth_strategy keystone
 openstack-configure set /etc/ironic/ironic.conf neutron auth_strategy keystone
-
-# ======================================================================
-# Setup Glance.
-# TODO: !! Individual service users !!
-#cp /etc/glance/glance-scrubber.conf /etc/glance/glance-scrubber.conf.orig
-#openstack-configure set /etc/glance/glance-scrubber.conf
 
 # ======================================================================
 # Setup MongoDB.
@@ -526,7 +640,7 @@ cinder encryption-type-create --cipher aes-xts-plain64 --key_size 512 \
 openstack volume type create --description "Local LVM volumes" --public lvm
 openstack volume type create --description "Local NFS volumes" --public nfs
 openstack volume type set --property volume_backend_name=LVM_iSCSI lvm
-openstack volume type set --property volume_backend_name=nfsbackend nfs
+openstack volume type set --property volume_backend_name=NFS nfs
 # TODO: ?? Create (more) extra spec key-value pairs for these ??
 set -x
 
@@ -539,6 +653,11 @@ ovs-vsctl add-port br-provider eth0
 # TODO:
 # 2016-06-20 12:16:11.072 7736 ERROR neutron.agent.ovsdb.impl_vsctl [-] Unable to execute ['ovs-vsctl', '--timeout=10', '--oneline', '--format=json', '--', '--if-exists', 'del-port', 'br-physical', 'patch-tun']. Exception: Exit code: 1; Stdin: ; Stdout: ; Stderr: ovs-vsctl: bridge br-physical does not have a port patch-tun
 # 2016-06-20 12:16:11.537 7736 ERROR neutron.plugins.ml2.drivers.openvswitch.agent.ovs_neutron_agent [req-d17e9f19-0a2c-4f86-ac89-7d078842e820 - - - - -] Parsing bridge_mappings failed: Invalid mapping: 'br-provider'. Agent terminated!
+
+# ======================================================================
+# Setup Open iSCSI.
+iscsiadm -m iface -I eth1 --op=new
+iscsiadm -m iface -I eth1 --op=update -n iface.vlan_priority -v 1
 
 # ======================================================================
 # Create network(s), routers etc.
@@ -593,13 +712,14 @@ chown root:cinder /etc/cinder/cinder-nfs.conf
 chmod 0640 /etc/cinder/cinder-nfs.conf
 cat <<EOF >> /etc/cinder/cinder.conf
 volume_backend_name = LVM_iSCSI
-iscsi_ip_address = 10.0.4.1
+lvm_conf_file = /etc/cinder/cinder-lvm.conf
+lvm_type = default
 
 # NFS driver
 [nfs]
 volume_driver = cinder.volume.drivers.nfs.NfsDriver
 volume_group = blade_center
-volume_backend_name = nfsbackend
+volume_backend_name = NFS
 nfs_shares_config = /etc/cinder/cinder-nfs.conf
 nfs_sparsed_volumes = true
 #nfs_mount_options = 

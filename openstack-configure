@@ -6,7 +6,7 @@ if [ ! -f "/usr/share/openstack-pkg-tools/pkgos_func" ]; then
 fi
 
 . /usr/share/openstack-pkg-tools/pkgos_func
-export PKGOS_VERBOSE=yes
+[ "${1}" != "get" ] && export PKGOS_VERBOSE=yes
 
 pkgos_inifile $*
 

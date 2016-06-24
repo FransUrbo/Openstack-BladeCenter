@@ -203,7 +203,7 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     sed -i "s@^bind-address[ \t].*@bind-address\t= 0.0.0.0@" "${cfg}"
     sed -i "s@^#max_connections[ \t].*@max_connections\t=5000@" "${cfg}"
     echo "SET GLOBAL max_connections = 5000;" | \
-        mysql -uroot -psecret11 -hlocalhost mysql
+        mysql -uroot -psecret46 -hlocalhost mysql
     /etc/init.d/mysql restart
 
     # ======================================================================
@@ -321,6 +321,9 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     #
     # TODO: !! MySQL errors !!
     # trove-api trove-guestagent trove-conductor trove-taskmanager 
+    #
+    # TODO: !! As soon as it's released !!
+    # neutron-fwaas???
     do_install "${APIs}" "${ENGINEs}" "${SCHEDULERs}" "${AGENTs}" \
         "${OPENvSWITCHs}" barbican-keystone-listener barbican-worker \
         ceilometer-alarm-notifier ceilometer-collector cinder-backup \
@@ -337,32 +340,35 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
 
     # ======================================================================
 
-    # Get the ssh key for Cinder and Nova.
-    curl -s http://${LOCALSERVER}/PXEBoot/id_rsa-control > /etc/cinder/sshkey
-    chown cinder:root /etc/cinder/sshkey ; chmod 0600 /etc/cinder/sshkey
-    cp /etc/cinder/sshkey /etc/nova/sshkey ; chown nova:root /etc/nova/sshkey
-
-    # RabbitMQ is notoriously sucky and unstable and crashes all the effin time!
-    # So install a script that checks it once a minut and if it's dead, restart
-    # it.
-    curl -s http://${LOCALSERVER}/PXEBoot/check_rabbitmq.sh > \
-        /usr/local/sbin/check_rabbitmq.sh
-    chmod +x /usr/local/sbin/check_rabbitmq.sh
-    echo "*/1 * * * *	root	/usr/local/sbin/check_rabbitmq.sh" > \
-        /etc/cron.d/rabbitmq
-
-    # Install the ZFS/ZoL Openstack Cinder plugin.
-    curl -s http://${LOCALSERVER}/PXEBoot/install_cinder_zfs.sh > \
-        /var/tmp/install_cinder_zfs.sh
-    sh -x /var/tmp/install_cinder_zfs.sh
-
     # Do local setup of Openstack.
     curl -s http://${LOCALSERVER}/PXEBoot/local_setup_openstack-control.sh > \
         /var/tmp/local_setup_openstack-control.sh
     sh -x /var/tmp/local_setup_openstack-control.sh
 fi
 
-#apt-get -y remove openstack-pkg-tools
+# ======================================================================
+# Cleanup etc.
+
+# Remove all passwords from the debconf database.
+# NOTE: This is technically pointless. It's still available
+#       from the master file on LOCALSERVER.
+debconf-get-selections | \
+    grep "^[a-z].*[ $(printf '\t')]password[ $(printf '\t')].*" | \
+    sed "s@^\([a-z].*[ $(printf '\t')]password[ $(printf '\t')]\).*@\1@" | \
+    debconf-set-selections
+
+# Remove all passwords from the dbconfig-common files.
+# NOTE: This is technically pointless. It's still available
+#       from the master file on LOCALSERVER.
+egrep '^dbc_dbpass|^dbc_dbadmpass' /etc/dbconfig-common/* | \
+    sed 's@:.*@@' | sort | uniq | \
+    while read file; do
+	cat "${file}" | sed -e "s@^\(dbc_dbpass='\).*@\1'@" \
+            -e "s@^\(dbc_dbadmpass='\).*@\1'@" > \
+            "${file}.new"
+        mv "${file}.new" "${file}"
+    done
+
 apt-get -y autoremove
 apt-get clean
 

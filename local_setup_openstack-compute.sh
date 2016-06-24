@@ -73,9 +73,14 @@ ini_unset_value () {
     sed -i "s@^\(\${value}[ \t]\)=.*@#\1 = <None>@" "\${file}"
 }
 
-[ -f /root/admin-openrc ] && . /root/admin-openrc
+if [ -f /root/admin-openrc ]; then
+    . /root/admin-openrc
+else
+    echo "WARNING: No /root/admin-openrc."
+fi
 EOF
 
+exit 0
 # ======================================================================
 
 # Configure Designate
@@ -111,7 +116,6 @@ openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth region euro
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_tenant_name service
 #openstack-configure set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch # Needs to be done manually
 OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins)"
-[ -n "${OLD}" ] && OLD="${OLD},"
 #
 #lbaas									=> not found
 #lbaasv2								=> not found
@@ -127,7 +131,7 @@ OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins
 #neutron_lbaas.services.loadbalancer.plugin:LoadBalancerPlugin		=> not found
 #neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2        => not found
 #neutron_lbaas.services.loadbalancer.plugin:LoadBalancerPluginv2        => not found
-#openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins "${OLD}???"
+#openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins "${OLD:+${OLD},}???"
 for init in /etc/init.d/neutron-*; do $init restart; done
 
 # Configure Nova.
@@ -180,13 +184,20 @@ openstack-configure set /etc/nova/nova.conf neutron password \
 openstack-configure set /etc/nova/nova.conf neutron project_domain_name default
 openstack-configure set /etc/nova/nova.conf neutron project_name service
 openstack-configure set /etc/nova/nova.conf neutron tenant_name service
-openstack-configure set /etc/nova/nova.conf neutron user_domain_name default
+#openstack-configure set /etc/nova/nova.conf neutron user_domain_name default
 openstack-configure set /etc/nova/nova.conf neutron ovs_bridge br-provider
 openstack-configure set /etc/nova/nova.conf ironic admin_username ironic
 openstack-configure set /etc/nova/nova.conf ironic admin_password \
     "$(get_debconf_value "openstack" "keystone/password/ironic")"
 openstack-configure set /etc/nova/nova.conf ironic admin_tenant_name service
+openstack-configure set /etc/nova/nova.conf ironic api_endpoint "http://${ctrlnode}:6385/v1"
 openstack-configure set /etc/nova/nova.conf libvirt disk_cachemodes file=directsync,block=directsync
+openstack-configure set /etc/nova/nova.conf glance api_servers "http://${ctrlnode}:9292/"
+openstack-configure set /etc/nova/nova.conf glance num_retries 5
+#openstack-configure set /etc/nova/nova.conf glance verify_glance_signatures true
+openstack-configure set /etc/nova/nova.conf barbican os_region_name europe-london
+ini_unset_value /etc/nova/nova.conf default_domain_name
+ini_unset_value /etc/nova/nova.conf domain_name
 for init in /etc/init.d/nova-*; do $init restart; done
 
 # ======================================================================
@@ -196,7 +207,7 @@ openstack-configure set /etc/magnum/magnum.conf database connection "mysql+pymys
 
 # ======================================================================
 # Setup Open vSwitch
-ovs-vsctl del-br br-int                                                                                                                                      |
+ovs-vsctl del-br br-int
 ovs-vsctl add-br br-physical
 #ovs-vsctl add-port br-physical eth1 # TODO: !! This will cut traffic on eth1 !!
 ovs-vsctl add-br br-provider
@@ -206,3 +217,8 @@ cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openv
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings provider:br-provider
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
 for init in /etc/init.d/*openvswitch*; do $init restart; done
+
+# ======================================================================
+# Setup Open iSCSI.
+iscsiadm -m iface -I eth1 --op=new
+iscsiadm -m iface -I eth1 --op=update -n iface.vlan_priority -v 1

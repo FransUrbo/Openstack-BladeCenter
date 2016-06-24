@@ -22,6 +22,7 @@ usermod -aG docker nova
 cd /tmp
 pip install -e git+https://github.com/stackforge/nova-docker#egg=novadocker
 cd src/novadocker/
+echo "GIT $(git log | head -n1)"
 python setup.py install
 
 # Update Nova config
@@ -41,6 +42,7 @@ cat <<EOF >> /etc/nova/nova-compute.conf
 # Nova Docker driver
 [docker]
 compute_driver = novadocker.virt.docker.DockerDriver
+inject_key = true
 EOF
 for init in /etc/init.d/nova-*; do $init restart; done
 
@@ -54,11 +56,19 @@ echo "DOCKER_OPTS=\"-H fd:// -H unix:///var/run/docker.sock -H tcp://127.0.0.1:2
     >> /etc/default/docker
 /etc/init.d/docker restart
 
-# Get all my Docker images. Use nohup and in the background,
-# because this takes quite a while!
-for tag in centos5 centos6 centos7 fedora20 fedora21 \
-    fedora22 fedora23 jessie sid trusty utopic vivid \
-    wheezy wily xenial
-do
-    nohup docker pull fransurbo/devel:$tag &
-done
+# Get all my special Docker images.
+if ! glance image-list | grep -q fransurbo; then
+    # Only do this once, on the first ever Compute..
+    docker images fransurbo/devel | \
+        grep -v "TAG" | \
+        while read line; do
+	    set -- $(echo "${line}")
+            tag="${2}"
+
+            docker pull "fransurbo/devel:${tag}"
+            docker save "fransurbo/devel:${tag}" | \
+                glance image-create --container-format=docker --disk-format=raw \
+		    --property protected=True --name "fransurbo/devel:${tag}"
+    done
+fi
+

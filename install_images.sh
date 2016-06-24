@@ -15,7 +15,8 @@ fi
 
 set -x
 
-cd /var/tmp
+mkdir -p /var/tmp/Images
+cd /var/tmp/Images
 
 if [ ! -e "CentOS-6-x86_64-GenericCloud-1605.qcow2" ]; then
     #wget --quiet http://cloud.centos.org/centos/6/images/CentOS-6-x86_64-GenericCloud-1605.qcow2 
