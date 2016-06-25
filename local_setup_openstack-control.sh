@@ -447,7 +447,7 @@ openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridg
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-physical
 
 cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openvswitch_agent.ini.origp
-openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings br-provider
+openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings external:br-provider
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs integration_bridge br-physical
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
 
@@ -458,13 +458,13 @@ openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 type_drivers "
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 extension_drivers port_security
 OLD="$(openstack-configure get /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks)"
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks "${OLD:+${OLD},}provider"
-openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_vlan network_vlan_ranges provider
+openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_vlan network_vlan_ranges external:90:99
 
 cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
 #openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers service_provider LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
 #openstack-configure set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch # Needs to be done manually
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth auth_url "http://${ctrlnode}:35357/v2.0"
-openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_username admin
+openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_username neutron
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_password "${neutron_pass}"
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_tenant_name service
 penstack-configure set /etc/neutron/neutron_lbaas.conf service_auth region europe-london
@@ -677,44 +677,47 @@ iscsiadm -m iface -I eth1 --op=update -n iface.vlan_priority -v 1
 set +e # This require that a nova compute exists apparently, so make sure
        # we don't bomb out here.
 
-# Setup the physical network.
-neutron net-create physical --router:external True \
-    --provider:physical_network external --provider:network_type flat
+# Setup the physical (provider) network.
+# NOTE: Setting "provider:physical_network" name must match "bridge_mappings"
+#       and "network_vlan_ranges" above!
+neutron net-create physical --router:external True --shared \
+    --provider:physical_network external --provider:network_type flat 
 neutron subnet-create --name subnet-physical --dns-nameserver 10.0.0.254 \
     --disable-dhcp --ip-version 4 --gateway 10.0.0.254 physical 10.0.0.0/16
 
-# Setup the provider network 97.
-neutron net-create --shared --provider:network_type gre provider-97
+# Setup the tenant network 97.
+neutron net-create --provider:network_type gre tenant-97
 neutron subnet-create --name subnet-97 --dns-nameserver 10.0.0.254 \
-    --enable-dhcp --ip-version 4 --gateway 10.97.0.1 provider-97 10.97.0.0/24
+    --enable-dhcp --ip-version 4 --gateway 10.97.0.1 tenant-97 10.97.0.0/24
 
-# Setup the provider network 98.
-neutron net-create --shared --provider:network_type gre provider-98
+# Setup the tenant network 98.
+neutron net-create --provider:network_type gre tenant-98
 neutron subnet-create --name subnet-98 --dns-nameserver 10.0.0.254 \
-    --enable-dhcp --ip-version 4 --gateway 10.98.0.1 provider-98 10.98.0.0/24
+    --enable-dhcp --ip-version 4 --gateway 10.98.0.1 tenant-98 10.98.0.0/24
 
-# Setup the provider network 99.
-neutron net-create --shared --provider:network_type gre provider-99
+# Setup the tenant network 99.
+neutron net-create --provider:network_type gre tenant-99
 neutron subnet-create --name subnet-99 --dns-nameserver 10.0.0.254 \
-    --enable-dhcp --ip-version 4 --gateway 10.99.0.1 provider-99 10.99.0.0/24
+    --enable-dhcp --ip-version 4 --gateway 10.99.0.1 tenant-99 10.99.0.0/24
 
 # Create the router between these.
+# TODO: !! Need >1 l3 agents to do HA !!
 neutron router-create --distributed False --ha False physical-providers
 
-# Router port on the provider network 'provider-97'.
-neutron port-create --name port-provider97 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.97.0.254 provider-97
-neutron router-interface-add physical-providers port=port-provider97
+# Router port on the provider network 'tenant-97'.
+neutron port-create --name port-tenant97 --vnic-type direct \
+    --security-group default --fixed-ip ip_address=10.97.0.254 tenant-97
+neutron router-interface-add physical-providers port=port-tenant97
 
-# Router port on the provider network 'provider-98'.
-neutron port-create --name port-provider98 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.98.0.254 provider-98
-neutron router-interface-add physical-providers port=port-provider98
+# Router port on the provider network 'tenant-98'.
+neutron port-create --name port-tenant98 --vnic-type direct \
+    --security-group default --fixed-ip ip_address=10.98.0.254 tenant-98
+neutron router-interface-add physical-providers port=port-tenant98
 
-# Router port on the provider network 'provider-99'.
-neutron port-create --name port-provider99 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.99.0.254 provider-99
-neutron router-interface-add physical-providers port=port-provider99
+# Router port on the provider network 'tenant-99'.
+neutron port-create --name port-tenant99 --vnic-type direct \
+    --security-group default --fixed-ip ip_address=10.99.0.254 tenant-99
+neutron router-interface-add physical-providers port=port-tenant99
 
 # Set the routers default route to external gateway.
 neutron router-gateway-set --fixed-ip subnet_id=subnet-physical,ip_address=10.0.0.200 \
