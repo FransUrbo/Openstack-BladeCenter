@@ -493,7 +493,7 @@ penstack-configure set /etc/neutron/neutron_lbaas.conf service_auth region europ
 # Setup Ironic
 cp /etc/ironic/ironic.conf /etc/ironic/ironic.conf.orig
 openstack-configure set /etc/ironic/ironic.conf DEFAULT auth_strategy keystone
-openstack-configure set /etc/ironic/ironic.conf glance auth_strategy keystone
+openstack-configure set /etc/ironic/ironic.conf glance  auth_strategy keystone
 openstack-configure set /etc/ironic/ironic.conf neutron auth_strategy keystone
 
 # ======================================================================
@@ -684,42 +684,37 @@ neutron subnet-create --name subnet-physical --dns-nameserver 10.0.0.254 \
     --disable-dhcp --ip-version 4 --gateway 10.0.0.254 physical 10.0.0.0/16
 
 # Setup the provider network 97.
-neutron net-create --shared --provider:network_type gre network-97
+neutron net-create --shared --provider:network_type gre provider-97
 neutron subnet-create --name subnet-97 --dns-nameserver 10.0.0.254 \
-    --enable-dhcp --ip-version 4 --gateway 10.97.0.1 network-97 10.97.0.0/24
+    --enable-dhcp --ip-version 4 --gateway 10.97.0.1 provider-97 10.97.0.0/24
 
 # Setup the provider network 98.
-neutron net-create --shared --provider:network_type gre network-98
+neutron net-create --shared --provider:network_type gre provider-98
 neutron subnet-create --name subnet-98 --dns-nameserver 10.0.0.254 \
-    --enable-dhcp --ip-version 4 --gateway 10.98.0.1 network-98 10.98.0.0/24
+    --enable-dhcp --ip-version 4 --gateway 10.98.0.1 provider-98 10.98.0.0/24
 
 # Setup the provider network 99.
-neutron net-create --shared --provider:network_type gre network-99
+neutron net-create --shared --provider:network_type gre provider-99
 neutron subnet-create --name subnet-99 --dns-nameserver 10.0.0.254 \
-    --enable-dhcp --ip-version 4 --gateway 10.99.0.1 network-99 10.99.0.0/24
+    --enable-dhcp --ip-version 4 --gateway 10.99.0.1 provider-99 10.99.0.0/24
 
 # Create the router between these.
 neutron router-create --distributed False --ha False physical-providers
 
-# Router port on the provider network 'network-97'.
-neutron port-create --name port-network97 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.97.0.254 network-97
-neutron router-interface-add physical-providers port=port-network97
+# Router port on the provider network 'provider-97'.
+neutron port-create --name port-provider97 --vnic-type direct \
+    --security-group default --fixed-ip ip_address=10.97.0.254 provider-97
+neutron router-interface-add physical-providers port=port-provider97
 
-# Router port on the provider network 'network-98'.
-neutron port-create --name port-network98 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.98.0.254 network-98
-neutron router-interface-add physical-providers port=port-network98
+# Router port on the provider network 'provider-98'.
+neutron port-create --name port-provider98 --vnic-type direct \
+    --security-group default --fixed-ip ip_address=10.98.0.254 provider-98
+neutron router-interface-add physical-providers port=port-provider98
 
-# Router port on the provider network 'network-99'.
-neutron port-create --name port-network99 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.99.0.254 network-99
-neutron router-interface-add physical-providers port=port-network99
-
-# Router port on the physical network.
-#neutron port-create --name port-physical --vnic-type direct \
-#    --security-group default --fixed-ip ip_address=10.0.0.200 physical
-#neutron router-interface-add physical-providers port=port-physical
+# Router port on the provider network 'provider-99'.
+neutron port-create --name port-provider99 --vnic-type direct \
+    --security-group default --fixed-ip ip_address=10.99.0.254 provider-99
+neutron router-interface-add physical-providers port=port-provider99
 
 # Set the routers default route to external gateway.
 neutron router-gateway-set --fixed-ip subnet_id=subnet-physical,ip_address=10.0.0.200 \
