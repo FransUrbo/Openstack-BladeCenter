@@ -114,24 +114,22 @@ openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_passw
     "$(get_debconf_value "openstack" "keystone/password/neutron")"
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth region europe-london
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_tenant_name service
-#openstack-configure set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch # Needs to be done manually
-OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins)"
+# TODO: ?? Needs to be done manually ??
+#openstack-configure set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch
+# TODO: ProgrammingError: (pymysql.err.ProgrammingError) (1146, u"Table 'neutron.lbaas_loadbalancers' doesn't exist")
+#OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins)"
+#openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins \
+#    "${OLD:+${OLD},}neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2"
 #
-#lbaas									=> not found
-#lbaasv2								=> not found
-#neutron.lbaas.loadbalancer.LoadBalancer				=> not found
-#neutron.lbaas.loadbalancer:LoadBalancer				=> not found
-#neutron.lbaas.services.loadbalancer.plugin.LoadBalancer		=> not found
-#neutron.lbaas.services.loadbalancer.plugin:LoadBalancer		=> not found
-#neutron.services.loadbalancer.plugin.LoadBalancerPlugin                => not found
-#neutron.services.loadbalancer.plugin:LoadBalancerPlugin                => not found
-#neutron.services.loadbalancer.plugin.LoadBalancerPluginv2		=> not found
-#neutron.services.loadbalancer.plugin:LoadBalancerPluginv2		=> not found
-#neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin		=> not found
-#neutron_lbaas.services.loadbalancer.plugin:LoadBalancerPlugin		=> not found
-#neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2        => not found
-#neutron_lbaas.services.loadbalancer.plugin:LoadBalancerPluginv2        => not found
-#openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins "${OLD:+${OLD},}???"
+#cp /etc/neutron/lbaas_agent.ini /etc/neutron/lbaas_agent.ini.orig
+#openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT device_driver \
+#    neutron_lbaas.services.loadbalancer.drivers.haproxy.namespace_driver.HaproxyNSDriver
+#openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT interface_driver \
+#    neutron.plugins.services.agent_loadbalancer.plugin.LoadBalancerPluginv2
+#
+#cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
+#openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers \
+#    "LOADBALANCERV2:Octavia:neutron_lbaas.drivers.octavia.driver.OctaviaDriver:default"
 for init in /etc/init.d/neutron-*; do $init restart; done
 
 # Configure Nova.

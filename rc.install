@@ -96,12 +96,22 @@ if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
     ipnr="$(echo "${ip}" | sed 's@.*\.@@')"
     cat <<EOF >> /etc/network/interfaces
 
-auto eth0
-iface eth0 inet static
+# Provider network
+auto br-provider
+iface br-provider inet static
 	address 10.99.0.${ipnr}
 	netmask 255.255.255.0
 	network 10.99.0.0
 	broadcast 10.99.0.255
+	dns-nameservers 10.0.0.254
+ 
+# Provider network interface
+auto eth0
+iface eth0 inet manual
+	up ifconfig $IFACE 0.0.0.0 up
+	up ip link set $IFACE promisc on
+	down ip link set $IFACE promisc off
+	down ifconfig $IFACE down
 EOF
     ifup eth0
 
@@ -300,7 +310,8 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     for agent in ceilometer-agent-compute ceilometer-agent-ipmi \
         ceilometer-agent-notification ceilometer-agent-central \
         designate-agent neutron-dhcp-agent neutron-metering-agent \
-        neutron-lbaas-agent neutron-l3-agent
+        neutron-lbaas-agent python-neutron-lbaas neutron-l3-agent \
+        neutron-vpnaas-agent python-neutron-vpnaas
     do
         AGENTs="${AGENTs} ${agent}"
     done

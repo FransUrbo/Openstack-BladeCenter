@@ -44,7 +44,7 @@ cat <<EOF >> /etc/nova/nova-compute.conf
 #virt_type = kvm
 #vif_driver = nova.virt.libvirt.vif.LibvirtGenericVIFDriver
 #use_virtio_for_bridges = true
-## This may be needed for
+## The cpu_mode option can take one of the following values: none, host-passthrough, host-model, and custom.
 ##cpu_mode = host-passthrough
 #images_volume_group = <local_lvm_group>
 
