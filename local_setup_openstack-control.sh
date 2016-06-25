@@ -429,6 +429,8 @@ openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name
 #openstack-configure set /etc/neutron/neutron.conf keystone_authtoken identity_uri "http://${ctrlnode}:35357/"
 #ini_unset_value /etc/neutron/neutron.conf auth_host
 #ini_unset_value /etc/neutron/neutron.conf auth_protocol
+openstack-configure set /etc/neutron/neutron.conf oslo_messaging_notifications driver \
+    neutron.services.metering.drivers.iptables.iptables_driver.IptablesMeteringDriver
 
 cp /etc/neutron/dhcp_agent.ini /etc/neutron/dhcp_agent.ini.orig
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT force_metadata True
@@ -582,34 +584,34 @@ set -e
 # Create new security groups.
 set +e # This require that a nova compute exists apparently, so make sure
        # we don't bomb out here.
-openstack security group create --description "Allow incoming ICMP connections." icmp
-openstack security group rule create --proto icmp icmp
 openstack security group create --description "Allow incoming SSH connections."  ssh
-openstack security group rule create --proto tcp --dst-port 22 ssh
-openstack security group rule create --proto udp --dst-port 22 ssh
-openstack security group create --description "Allow incoming HTTP connections." http
-openstack security group rule create --proto tcp --dst-port 80 http
-openstack security group rule create --proto udp --dst-port 80 http
-openstack security group create --description "Allow incoming HTTPS connections." https
-openstack security group rule create --proto tcp --dst-port 443 https
-openstack security group rule create --proto udp --dst-port 443 https
-openstack security group create --description "Allow incoming WEB connections (HTTP && HTTPS)." web
-openstack security group rule create --proto tcp --dst-port 80 web
-openstack security group rule create --proto udp --dst-port 80 web
-openstack security group rule create --proto tcp --dst-port 443 web
-openstack security group rule create --proto udp --dst-port 443 web
+openstack security group rule create --proto tcp --dst-port   22 ssh
+openstack security group rule create --proto udp --dst-port   22 ssh
+openstack security group rule create --proto icmp ssh
+openstack security group create --description "Allow incoming HTTP/HTTPS connections." web
+openstack security group rule create --proto tcp --dst-port   80 web
+openstack security group rule create --proto udp --dst-port   80 web
+openstack security group rule create --proto tcp --dst-port  443 web
+openstack security group rule create --proto udp --dst-port  443 web
+openstack security group rule create --proto icmp web
 openstack security group create --description "Allow incoming DNS connections." dns
-openstack security group rule create --proto tcp --dst-port 42 dns
-openstack security group rule create --proto udp --dst-port 42 dns
-openstack security group create --description "Allow incoming LDAP connections." ldap
-openstack security group rule create --proto tcp --dst-port 389 ldap
-openstack security group rule create --proto udp --dst-port 389 ldap
-openstack security group create --description "Allow incoming LDAP connections." ldaps
-openstack security group rule create --proto tcp --dst-port 636 ldaps
-openstack security group rule create --proto udp --dst-port 636 ldaps
-openstack security group create --description "Allow incoming MYSQL connections." mysql
+openstack security group rule create --proto tcp --dst-port   53 dns
+openstack security group rule create --proto udp --dst-port   53 dns
+openstack security group rule create --proto icmp dns
+openstack security group create --description "Allow incoming LDAP/LDAPS connections." ldap
+openstack security group rule create --proto tcp --dst-port  389 ldap
+openstack security group rule create --proto udp --dst-port  389 ldap
+openstack security group rule create --proto tcp --dst-port  636 ldap
+openstack security group rule create --proto udp --dst-port  636 ldap
+openstack security group rule create --proto icmp ldap
+openstack security group create --description "Allow incoming MySQL connections." mysql
 openstack security group rule create --proto tcp --dst-port 3306 mysql
 openstack security group rule create --proto udp --dst-port 3306 mysql
+openstack security group rule create --proto icmp mysql
+openstack security group create --description "Allow incoming PostgreSQL connections." psql
+openstack security group rule create --proto tcp --dst-port 5432 psql
+openstack security group rule create --proto udp --dst-port 5432 psql
+openstack security group rule create --proto icmp psql
 set -x
 
 # ======================================================================
@@ -672,26 +674,56 @@ iscsiadm -m iface -I eth1 --op=update -n iface.vlan_priority -v 1
 # ======================================================================
 # Create network(s), routers etc.
 # TODO: !! I really need to understand Neutron networking first !!
-
-# Setup the physical network
 set +e # This require that a nova compute exists apparently, so make sure
        # we don't bomb out here.
+
+# Setup the physical network.
 neutron net-create physical --router:external True \
     --provider:physical_network external --provider:network_type flat
 neutron subnet-create --name subnet-physical --dns-nameserver 10.0.0.254 \
     --disable-dhcp --ip-version 4 --gateway 10.0.0.254 physical 10.0.0.0/16
-neutron router-create --distributed False --ha False router-physical
-neutron port-create --name port-physical --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.0.0.200 physical
-neutron router-interface-add router-physical port=port-physical
 
-# Setup the first provider network
+# Setup the provider network 97.
+neutron net-create --shared --provider:network_type gre network-97
+neutron subnet-create --name subnet-97 --dns-nameserver 10.0.0.254 \
+    --enable-dhcp --ip-version 4 --gateway 10.97.0.1 network-97 10.97.0.0/24
+
+# Setup the provider network 98.
+neutron net-create --shared --provider:network_type gre network-98
+neutron subnet-create --name subnet-98 --dns-nameserver 10.0.0.254 \
+    --enable-dhcp --ip-version 4 --gateway 10.98.0.1 network-98 10.98.0.0/24
+
+# Setup the provider network 99.
 neutron net-create --shared --provider:network_type gre network-99
 neutron subnet-create --name subnet-99 --dns-nameserver 10.0.0.254 \
-    --enable-dhcp --ip-version 4 --gateway 10.99.0.1  network-99 10.99.0.0/24
+    --enable-dhcp --ip-version 4 --gateway 10.99.0.1 network-99 10.99.0.0/24
 
-#neutron router-gateway-set --fixed-ip subnet_id=subnet-physical,ip_address=10.0.0.200 \
-#    router-physical physical
+# Create the router between these.
+neutron router-create --distributed False --ha False physical-providers
+
+# Router port on the provider network 'network-97'.
+neutron port-create --name port-network97 --vnic-type direct \
+    --security-group default --fixed-ip ip_address=10.97.0.254 network-97
+neutron router-interface-add physical-providers port=port-network97
+
+# Router port on the provider network 'network-98'.
+neutron port-create --name port-network98 --vnic-type direct \
+    --security-group default --fixed-ip ip_address=10.98.0.254 network-98
+neutron router-interface-add physical-providers port=port-network98
+
+# Router port on the provider network 'network-99'.
+neutron port-create --name port-network99 --vnic-type direct \
+    --security-group default --fixed-ip ip_address=10.99.0.254 network-99
+neutron router-interface-add physical-providers port=port-network99
+
+# Router port on the physical network.
+#neutron port-create --name port-physical --vnic-type direct \
+#    --security-group default --fixed-ip ip_address=10.0.0.200 physical
+#neutron router-interface-add physical-providers port=port-physical
+
+# Set the routers default route to external gateway.
+neutron router-gateway-set --fixed-ip subnet_id=subnet-physical,ip_address=10.0.0.200 \
+    physical-providers physical
 set -e
 
 # ======================================================================
