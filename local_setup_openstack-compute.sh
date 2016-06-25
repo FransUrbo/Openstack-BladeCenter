@@ -155,6 +155,11 @@ openstack-configure set /etc/nova/nova.conf DEFAULT network_allocate_retries 5
 #openstack-configure set /etc/nova/nova.conf DEFAULT max_concurrent_live_migrations 5
 openstack-configure set /etc/nova/nova.conf DEFAULT metadata_cache_expiration 60
 openstack-configure set /etc/nova/nova.conf DEFAULT remove_unused_base_images false
+openstack-configure set /etc/nova/nova.conf DEFAULT cpu_allocation_ratio 8.0
+openstack-configure set /etc/nova/nova.conf DEFAULT ram_allocation_ratio 1.0
+openstack-configure set /etc/nova/nova.conf DEFAULT disk_allocation_ratio 1.0
+openstack-configure set /etc/nova/nova.conf DEFAULT default_ephemeral_format xfs
+openstack-configure set /etc/nova/nova.conf DEFAULT public_interface eth1
 openstack-configure set /etc/nova/nova.conf database connection "mysql+pymysql://nova:${nova_pass}@${ctrlnode}/nova"
 openstack-configure set /etc/nova/nova.conf api_database connection "mysql+pymysql://novaapi:${nova_api_pass}@${ctrlnode}/novaapi"
 openstack-configure set /etc/nova/nova.conf cinder cross_az_attach True

@@ -38,10 +38,21 @@ cat <<EOF > /etc/nova/rootwrap.d/docker.filters
 ln: CommandFilter, /bin/ln, root
 EOF
 cat <<EOF >> /etc/nova/nova-compute.conf
+# ?? Duplicate ??
+#[libvirt]
+#compute_driver = nova.virt.libvirt.LibvirtDriver
+#virt_type = kvm
+#vif_driver = nova.virt.libvirt.vif.LibvirtGenericVIFDriver
+#use_virtio_for_bridges = true
+## This may be needed for
+##cpu_mode = host-passthrough
+#images_volume_group = <local_lvm_group>
 
 # Nova Docker driver
 [docker]
 compute_driver = novadocker.virt.docker.DockerDriver
+#vif_driver = novadocker.virt.docker.vifs.DockerGenericVIFDriver
+snapshots_directory = /var/lib/docker/tmp
 inject_key = true
 EOF
 for init in /etc/init.d/nova-*; do $init restart; done
@@ -56,19 +67,40 @@ echo "DOCKER_OPTS=\"-H fd:// -H unix:///var/run/docker.sock -H tcp://127.0.0.1:2
     >> /etc/default/docker
 /etc/init.d/docker restart
 
-# Get all my special Docker images.
-if ! glance image-list | grep -q fransurbo; then
-    # Only do this once, on the first ever Compute..
-    docker images fransurbo/devel | \
-        grep -v "TAG" | \
-        while read line; do
-	    set -- $(echo "${line}")
-            tag="${2}"
+GENERAL_OPTS="--public --protected
+--project admin
+--disk-format raw
+--container-format docker
+--property architecture=x86_64
+--property hypervisor_type=docker"
 
-            docker pull "fransurbo/devel:${tag}"
+# Get all my special Docker images.
+docker images fransurbo/devel | \
+    grep -v "TAG" | \
+    while read line; do
+	set -- $(echo "${line}")
+        tag="${2}"
+
+        # We need that on each Docker host.
+        docker pull "fransurbo/devel:${tag}"
+
+        if ! glance image-list | grep -q "fransurbo/devel:${tag}"
+        then
+            # .. but this only once in Glance.
             docker save "fransurbo/devel:${tag}" | \
-                glance image-create --container-format=docker --disk-format=raw \
-		    --property protected=True --name "fransurbo/devel:${tag}"
+                openstack image create ${GENERAL_OPTS} \
+                    --property os_command_line='/usr/sbin/sshd -D' \
+                    "fransurbo/devel:${tag}"
+        fi
     done
+
+docker pull busybox
+docker tag busybox fransurbo/devel:busybox
+docker rmi busybox
+if ! glance image-list | grep -q fransurbo; then
+    docker save "fransurbo/devel:busybox" | \
+        openstack image create ${GENERAL_OPTS} \
+            --property os_command_line='/usr/sbin/sshd -D' \
+            "fransurbo/devel:busybox"
 fi
 

@@ -191,11 +191,20 @@ openstack-configure set /etc/nova/nova.conf DEFAULT baremetal_scheduler_default_
 openstack-configure set /etc/nova/nova.conf DEFAULT my_block_storage_ip \$my_ip
 openstack-configure set /etc/nova/nova.conf DEFAULT routing_source_ip \$my_ip
 openstack-configure set /etc/nova/nova.conf DEFAULT metadata_host \$my_ip
+openstack-configure set /etc/nova/nova.conf DEFAULT dhcp_lease_time $(expr 60 \* 60 \* 6)
+openstack-configure set /etc/nova/nova.conf DEFAULT use_single_default_gateway true
+#openstack-configure set /etc/nova/nova.conf DEFAULT linuxnet_ovs_integration_bridge br-provider
+# TODO: [...] lots of networking/nat stuff after that option..
 openstack-configure set /etc/nova/nova.conf DEFAULT instance_usage_audit True
-openstack-configure set /etc/nova/nova.conf DEFAULT instance_usage_audit_period Hour
+openstack-configure set /etc/nova/nova.conf DEFAULT instance_usage_audit_period hour
 openstack-configure set /etc/nova/nova.conf DEFAULT notify_on_state_change vm_and_task_state
 openstack-configure set /etc/nova/nova.conf DEFAULT driver messagingv2
 openstack-configure set /etc/nova/nova.conf DEFAULT rpc_backend rabbit
+openstack-configure set /etc/nova/nova.conf DEFAULT cpu_allocation_ratio 8.0
+openstack-configure set /etc/nova/nova.conf DEFAULT ram_allocation_ratio 1.0
+openstack-configure set /etc/nova/nova.conf DEFAULT disk_allocation_ratio 1.0
+openstack-configure set /etc/nova/nova.conf DEFAULT default_ephemeral_format xfs
+openstack-configure set /etc/nova/nova.conf DEFAULT public_interface eth1
 openstack-configure set /etc/nova/nova.conf cinder cross_az_attach True
 openstack-configure set /etc/nova/nova.conf keystone_authtoken http_connect_timeout 5
 openstack-configure set /etc/nova/nova.conf keystone_authtoken http_request_max_retries 3
@@ -424,6 +433,7 @@ openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name
 cp /etc/neutron/dhcp_agent.ini /etc/neutron/dhcp_agent.ini.orig
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT force_metadata True
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT enable_metadata_network True
+openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT dhcp_domain openstack.domain.tld
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT dnsmasq_dns_servers 10.0.0.254
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT enable_isolated_metadata True
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT ovs_integration_bridge br-physical
