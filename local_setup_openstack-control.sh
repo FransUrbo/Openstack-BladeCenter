@@ -128,8 +128,8 @@ openstack-configure set /etc/keystone/keystone.conf oslo_messaging_rabbit rabbit
 #openstack-configure set /etc/keystone/keystone.conf ldap user_name_attribute cn
 #openstack-configure set /etc/keystone/keystone.conf ldap user_mail_attribute mail
 #openstack-configure set /etc/keystone/keystone.conf ldap user_pass_attribute userPassword
-#TODO: [...]
 #http://docs.openstack.org/admin-guide/keystone_integrate_with_ldap.html
+#TODO: [...] and more LDAP stuff..
 #ini_unset_value /etc/keystone/keystone.conf admin_token # TODO: ?? Nothing works without this ??
 
 # Configure Designate.
@@ -403,22 +403,6 @@ cp /etc/neutron/neutron.conf /etc/neutron/neutron.conf.orig
 openstack-configure set /etc/neutron/neutron.conf DEFAULT bind_host 0.0.0.0
 openstack-configure set /etc/neutron/neutron.conf DEFAULT default_availability_zones nova
 openstack-configure set /etc/neutron/neutron.conf DEFAULT availability_zone nova
-# neutron.plugins.openvswitch.ovs_neutron_plugin.OVSNeutronPluginV2                    NEUTRON_PLUGIN_NAME=OpenVSwitch
-# neutron.plugins.linuxbridge.lb_neutron_plugin.LinuxBridgePluginV2                    NEUTRON_PLUGIN_NAME=LinuxBridge
-# neutron.plugins.ml2.plugin.Ml2Plugin                                                 NEUTRON_PLUGIN_NAME=ml2
-# neutron.plugins.ryu.ryu_neutron_plugin.RyuNeutronPluginV2                            NEUTRON_PLUGIN_NAME=RYU
-# neutron.plugins.plumgrid.plumgrid_nos_plugin.plumgrid_plugin.NeutronPluginPLUMgridV2 NEUTRON_PLUGIN_NAME=PLUMgrid
-# neutron.plugins.brocade.NeutronPlugin.BrocadePluginV2                                NEUTRON_PLUGIN_NAME=Brocade
-# neutron.plugins.hyperv.hyperv_neutron_plugin.HyperVNeutronPlugin                     NEUTRON_PLUGIN_NAME=Hyper-V
-# neutron.plugins.bigswitch.plugin.NeutronRestProxyV2                                  NEUTRON_PLUGIN_NAME=BigSwitch
-# neutron.plugins.cisco.network_plugin.PluginV2                                        NEUTRON_PLUGIN_NAME=Cisco
-# neutron.plugins.nicira.NeutronPlugin.NvpPluginV2                                     NEUTRON_PLUGIN_NAME=neutron.plugins.nicira.NeutronPlugin.NvpPluginV2
-# neutron.plugins.midonet.plugin.MidonetPluginV2                                       NEUTRON_PLUGIN_NAME=Midonet
-# neutron.plugins.nec.nec_plugin.NECPluginV2                                           NEUTRON_PLUGIN_NAME=Nec
-# neutron.plugins.metaplugin.meta_neutron_plugin.MetaPluginV2                          NEUTRON_PLUGIN_NAME=MetaPlugin
-# neutron.plugins.mlnx.mlnx_plugin.MellanoxEswitchPlugin                               NEUTRON_PLUGIN_NAME=Mellanox
-# TODO: !! ERROR neutron ImportError: Plugin 'neutron.plugins.openvswitch.ovs_neutron_plugin.OVSNeutronPluginV2' not found !!
-#openstack-configure set /etc/neutron/neutron.conf DEFAULT core_plugin neutron.plugins.openvswitch.ovs_neutron_plugin.OVSNeutronPluginV2
 openstack-configure set /etc/neutron/neutron.conf DEFAULT core_plugin neutron.plugins.ml2.plugin.Ml2Plugin
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name europe-london
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken http_connect_timeout 5
@@ -446,7 +430,7 @@ openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_state_report_worke
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridge br-provider
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-physical
 
-cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openvswitch_agent.ini.origp
+cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openvswitch_agent.ini.orig
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings external:br-provider
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs integration_bridge br-physical
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
@@ -662,9 +646,6 @@ ovs-vsctl add-br br-physical
 #ovs-vsctl add-port br-physical eth1 # TODO: !! This will cut traffic on eth1 !!
 ovs-vsctl add-br br-provider
 ovs-vsctl add-port br-provider eth0
-# TODO:
-# 2016-06-20 12:16:11.072 7736 ERROR neutron.agent.ovsdb.impl_vsctl [-] Unable to execute ['ovs-vsctl', '--timeout=10', '--oneline', '--format=json', '--', '--if-exists', 'del-port', 'br-physical', 'patch-tun']. Exception: Exit code: 1; Stdin: ; Stdout: ; Stderr: ovs-vsctl: bridge br-physical does not have a port patch-tun
-# 2016-06-20 12:16:11.537 7736 ERROR neutron.plugins.ml2.drivers.openvswitch.agent.ovs_neutron_agent [req-d17e9f19-0a2c-4f86-ac89-7d078842e820 - - - - -] Parsing bridge_mappings failed: Invalid mapping: 'br-provider'. Agent terminated!
 
 # ======================================================================
 # Setup Open iSCSI.
@@ -683,7 +664,9 @@ set +e # This require that a nova compute exists apparently, so make sure
 neutron net-create physical --router:external True --shared \
     --provider:physical_network external --provider:network_type flat 
 neutron subnet-create --name subnet-physical --dns-nameserver 10.0.0.254 \
-    --disable-dhcp --ip-version 4 --gateway 10.0.0.254 physical 10.0.0.0/16
+    --disable-dhcp --ip-version 4 --gateway 10.0.0.254 \
+    --allocation-pool start=10.0.250.1,end=10.0.255.254 \
+    physical 10.0.0.0/16
 
 # Setup the tenant network 97.
 neutron net-create --provider:network_type gre tenant-97
@@ -706,20 +689,22 @@ neutron router-create --distributed False --ha False physical-providers
 
 # Router port on the provider network 'tenant-97'.
 neutron port-create --name port-tenant97 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.97.0.254 tenant-97
+    --security-group default --fixed-ip ip_address=10.97.0.1 tenant-97
 neutron router-interface-add physical-providers port=port-tenant97
 
 # Router port on the provider network 'tenant-98'.
 neutron port-create --name port-tenant98 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.98.0.254 tenant-98
+    --security-group default --fixed-ip ip_address=10.98.0.1 tenant-98
 neutron router-interface-add physical-providers port=port-tenant98
 
 # Router port on the provider network 'tenant-99'.
 neutron port-create --name port-tenant99 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.99.0.254 tenant-99
+    --security-group default --fixed-ip ip_address=10.99.0.1 tenant-99
 neutron router-interface-add physical-providers port=port-tenant99
 
 # Set the routers default route to external gateway.
+# NOTE: Ths also creates a port on the router.
+# TODO: Set the name of the port to 'port-external'.
 neutron router-gateway-set --fixed-ip subnet_id=subnet-physical,ip_address=10.0.0.200 \
     physical-providers physical
 set -e
