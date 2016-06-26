@@ -105,6 +105,13 @@ curl -s http://${LOCALSERVER}/PXEBoot/install_cinder_zfs.sh > \
     /var/tmp/install_cinder_zfs.sh
 sh -x /var/tmp/install_cinder_zfs.sh
 
+cat <<EOF >> /etc/sysctl.conf
+
+# Enable IP forwarding
+net.ipv4.ip_forward = 1
+EOF
+sysctl -p
+
 # ======================================================================
 
 # Configure Keystone.
@@ -404,6 +411,12 @@ openstack-configure set /etc/neutron/neutron.conf DEFAULT bind_host 0.0.0.0
 openstack-configure set /etc/neutron/neutron.conf DEFAULT default_availability_zones nova
 openstack-configure set /etc/neutron/neutron.conf DEFAULT availability_zone nova
 openstack-configure set /etc/neutron/neutron.conf DEFAULT core_plugin neutron.plugins.ml2.plugin.Ml2Plugin
+openstack-configure set /etc/neutron/neutron.conf DEFAULT notify_nova_on_port_status_changes True
+openstack-configure set /etc/neutron/neutron.conf DEFAULT notify_nova_on_port_data_changes True
+# TODO: !! MySQL errors !!
+#OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins)"
+#openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins \
+#    "${OLD:+${OLD},}neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2"
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name europe-london
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken http_connect_timeout 5
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken http_request_max_retries 3
@@ -415,6 +428,8 @@ openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name
 #ini_unset_value /etc/neutron/neutron.conf auth_protocol
 openstack-configure set /etc/neutron/neutron.conf oslo_messaging_notifications driver \
     neutron.services.metering.drivers.iptables.iptables_driver.IptablesMeteringDriver
+openstack-configure set /etc/neutron/neutron.conf agent availability_zone nova
+openstack-configure set /etc/neutron/neutron.conf database use_db_reconnect true
 
 cp /etc/neutron/dhcp_agent.ini /etc/neutron/dhcp_agent.ini.orig
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT force_metadata True
@@ -427,11 +442,11 @@ openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT ovs_integration_brid
 cp /etc/neutron/l3_agent.ini /etc/neutron/l3_agent.ini.orig
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_workers 5
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_state_report_workers 5
-openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridge br-provider
+openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridge br-physical
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-physical
 
 cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openvswitch_agent.ini.orig
-openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings external:br-provider
+openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings external:br-physical
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs integration_bridge br-physical
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
 
@@ -440,38 +455,19 @@ openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini securitygroup fire
 OLD="$(openstack-configure get /etc/neutron/plugins/ml2/ml2_conf.ini ml2 type_drivers)"
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 type_drivers "${OLD:+${OLD},}vlan"
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 extension_drivers port_security
-OLD="$(openstack-configure get /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks)"
-openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks "${OLD:+${OLD},}provider"
+openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks external
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_vlan network_vlan_ranges external:90:99
 
 cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
-#openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers service_provider LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
-#openstack-configure set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch # Needs to be done manually
+# TODO: !! Enabling this and neutron.conf:DEFAULT:service_plugins resulted in MySQL errors !!
+#openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers service_provider \
+#    LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
+#openstack-configure set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch # TODO: ?! Needs to be done manually !?
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth auth_url "http://${ctrlnode}:35357/v2.0"
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_username neutron
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_password "${neutron_pass}"
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_tenant_name service
-penstack-configure set /etc/neutron/neutron_lbaas.conf service_auth region europe-london
-#
-#lbaas									=> not found
-#lbaasv2								=> not found
-#neutron.lbaas.loadbalancer.LoadBalancer				=> not found
-#neutron.lbaas.loadbalancer:LoadBalancer				=> not found
-#neutron.lbaas.services.loadbalancer.plugin.LoadBalancer		=> not found
-#neutron.lbaas.services.loadbalancer.plugin:LoadBalancer		=> not found
-#neutron.services.loadbalancer.plugin.LoadBalancerPlugin                => not found
-#neutron.services.loadbalancer.plugin:LoadBalancerPlugin                => not found
-#neutron.services.loadbalancer.plugin.LoadBalancerPluginv2		=> not found
-#neutron.services.loadbalancer.plugin:LoadBalancerPluginv2		=> not found
-#neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPlugin		=> not found
-#neutron_lbaas.services.loadbalancer.plugin:LoadBalancerPlugin		=> not found
-#neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2        => not found
-#neutron_lbaas.services.loadbalancer.plugin:LoadBalancerPluginv2        => not found
-#LOADBALANCER:Haproxy:neutron.services.loadbalancer.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
-#if [ "${RET}" != "NO_VALUE" ]; then
-#    [ -n "${RET}" ] && RET="${RET},"
-#    openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins "${RET}???"
-#fi
+openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth region europe-london
 
 # ======================================================================
 # Setup Ironic
@@ -662,51 +658,57 @@ set +e # This require that a nova compute exists apparently, so make sure
 # NOTE: Setting "provider:physical_network" name must match "bridge_mappings"
 #       and "network_vlan_ranges" above!
 neutron net-create physical --router:external True --shared \
-    --provider:physical_network external --provider:network_type flat 
+    --provider:physical_network external --provider:network_type flat \
+    --availability-zone-hint nova
 neutron subnet-create --name subnet-physical --dns-nameserver 10.0.0.254 \
     --disable-dhcp --ip-version 4 --gateway 10.0.0.254 \
     --allocation-pool start=10.0.250.1,end=10.0.255.254 \
     physical 10.0.0.0/16
 
 # Setup the tenant network 97.
-neutron net-create --provider:network_type gre tenant-97
+neutron net-create --provider:network_type gre --availability-zone-hint nova \
+    tenant-97
 neutron subnet-create --name subnet-97 --dns-nameserver 10.0.0.254 \
     --enable-dhcp --ip-version 4 --gateway 10.97.0.1 tenant-97 10.97.0.0/24
 
 # Setup the tenant network 98.
-neutron net-create --provider:network_type gre tenant-98
+neutron net-create --provider:network_type gre --availability-zone-hint nova \
+    tenant-98
 neutron subnet-create --name subnet-98 --dns-nameserver 10.0.0.254 \
     --enable-dhcp --ip-version 4 --gateway 10.98.0.1 tenant-98 10.98.0.0/24
 
 # Setup the tenant network 99.
-neutron net-create --provider:network_type gre tenant-99
+neutron net-create --provider:network_type gre --availability-zone-hint nova \
+    tenant-99
 neutron subnet-create --name subnet-99 --dns-nameserver 10.0.0.254 \
     --enable-dhcp --ip-version 4 --gateway 10.99.0.1 tenant-99 10.99.0.0/24
 
 # Create the router between these.
 # TODO: !! Need >1 l3 agents to do HA !!
-neutron router-create --distributed False --ha False physical-providers
+neutron router-create --distributed False --ha False providers-tenants
 
 # Router port on the provider network 'tenant-97'.
 neutron port-create --name port-tenant97 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.97.0.1 tenant-97
-neutron router-interface-add physical-providers port=port-tenant97
+    --security-group default --fixed-ip ip_address=10.97.0.1 \
+    tenant-97
+neutron router-interface-add providers-tenants port=port-tenant97
 
 # Router port on the provider network 'tenant-98'.
 neutron port-create --name port-tenant98 --vnic-type direct \
     --security-group default --fixed-ip ip_address=10.98.0.1 tenant-98
-neutron router-interface-add physical-providers port=port-tenant98
+neutron router-interface-add providers-tenants port=port-tenant98
 
 # Router port on the provider network 'tenant-99'.
 neutron port-create --name port-tenant99 --vnic-type direct \
     --security-group default --fixed-ip ip_address=10.99.0.1 tenant-99
-neutron router-interface-add physical-providers port=port-tenant99
+neutron router-interface-add providers-tenants port=port-tenant99
 
 # Set the routers default route to external gateway.
 # NOTE: Ths also creates a port on the router.
-# TODO: Set the name of the port to 'port-external'.
 neutron router-gateway-set --fixed-ip subnet_id=subnet-physical,ip_address=10.0.0.200 \
-    physical-providers physical
+    providers-tenants physical
+set -- $(neutron port-list -c id -c fixed_ips | grep 10.0.0.200)
+[ -n "${2}" ] && neutron port-update --name port-external "${2}"
 set -e
 
 # ======================================================================

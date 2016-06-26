@@ -103,6 +103,9 @@ cp /etc/neutron/neutron.conf /etc/neutron/neutron.conf.orig
 openstack-configure set /etc/neutron/neutron.conf DEFAULT default_availability_zones nova
 openstack-configure set /etc/neutron/neutron.conf DEFAULT availability_zone nova
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name europe-london
+openstack-configure set /etc/neutron/neutron.conf database connection \
+    "$(get_debconf_value "openstack" "keystone/password/neutron")"
+openstack-configure set /etc/neutron/neutron.conf database use_db_reconnect true
 
 cp /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugins/ml2/ml2_conf.ini.orig
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini securitygroup firewall_driver iptables_hybrid
@@ -130,6 +133,12 @@ openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_tenan
 #cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
 #openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers \
 #    "LOADBALANCERV2:Octavia:neutron_lbaas.drivers.octavia.driver.OctaviaDriver:default"
+
+cp /etc/neutron/l3_agent.ini /etc/neutron/l3_agent.ini.orig
+openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-physical
+openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridge br-physical
+openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_workers 5
+openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_state_report_workers 5
 for init in /etc/init.d/neutron-*; do $init restart; done
 
 # Configure Nova.
