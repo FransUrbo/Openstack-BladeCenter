@@ -94,6 +94,7 @@ if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
 
     # Setup internal network.
     ipnr="$(echo "${ip}" | sed 's@.*\.@@')"
+    cp /etc/network/interfaces /etc/network/interfaces.orig
     cat <<EOF >> /etc/network/interfaces
 
 # Provider network
@@ -116,7 +117,8 @@ EOF
     ifup eth0
 
     # Disable IPv6.
-    cat <<EOF > /etc/sysctl.conf
+    cp /etc/sysctl.conf /etc/sysctl.conf.orig
+    cat <<EOF >> /etc/sysctl.conf
 
 # Disable IPv6.
 net.ipv6.conf.all.disable_ipv6 = 1
@@ -124,6 +126,10 @@ net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
 net.ipv6.conf.eth0.disable_ipv6 = 1
 net.ipv6.conf.eth1.disable_ipv6 = 1
+
+# Disable filtering
+net.ipv4.conf.all.rp_filter = 0
+net.ipv4.conf.default.rp_filter = 0
 EOF
     sysctl -p
 
@@ -173,7 +179,7 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     # nova-compute-ironic : Conflicts: nova-compute-kvm but 2:13.0.0-4 is to be installed
     # nova-compute-kvm : Conflicts: nova-compute-ironic but 2:13.0.0-4 is to be installed
     do_install nova-compute-kvm nova-console magnum-conductor fping ovmf \
-        neutron-openvswitch-agent neutron-lbaas-agent designate-agent 
+        neutron-openvswitch-agent neutron-lbaas-agent designate-agent neutron-l3-agent
 
     # ======================================================================
 
