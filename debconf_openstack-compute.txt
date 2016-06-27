@@ -1,3 +1,14 @@
+exim4-base	exim4/purge_spool	boolean	true
+exim4-config	exim4/dc_eximconfig_configtype	select	mail sent by smarthost; no local mail
+exim4-config	exim4/dc_local_interfaces	string	127.0.0.1 ; ::1
+exim4-config	exim4/dc_localdelivery	select	mbox format in /var/mail/
+exim4-config	exim4/dc_minimaldns	boolean	false
+exim4-config	exim4/dc_postmaster	string	turbo@domain.tld
+exim4-config	exim4/dc_readhost	string	domain.tld
+exim4-config	exim4/dc_smarthost	string	server.domain.tld
+exim4-config	exim4/hide_mailname	boolean	true
+exim4-config	exim4/no_config	boolean	true
+exim4-config	exim4/use_split_config	boolean	true
 designate-common	designate-common/app-password-confirm	password	secret14
 designate-common	designate-common/database-type	select	mysql
 designate-common	designate-common/db/app-user	string	designate
