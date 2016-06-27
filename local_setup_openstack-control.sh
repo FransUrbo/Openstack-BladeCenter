@@ -413,11 +413,12 @@ openstack-configure set /etc/neutron/neutron.conf DEFAULT availability_zone nova
 openstack-configure set /etc/neutron/neutron.conf DEFAULT core_plugin neutron.plugins.ml2.plugin.Ml2Plugin
 openstack-configure set /etc/neutron/neutron.conf DEFAULT notify_nova_on_port_status_changes True
 openstack-configure set /etc/neutron/neutron.conf DEFAULT notify_nova_on_port_data_changes True
-# TODO: !! MySQL errors when enabling 'lbaasv2' !!
-# TODO: !! Install and enable FWaaS and VPNaaS as soon as they're available !!
-#OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins)"
-#openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins \
-#    "${OLD:+${OLD},}lbaasv2,fwaas,vpnaas"
+OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins)"
+# NOTE: Using "lbaasv2" gives "Plugin 'lbaasv2' not found".
+# TODO: !! Install and enable FWaaS and VPNaaS as soon as they're available: ,fwaas,vpnaas !!
+openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins \
+    "${OLD:+${OLD},}neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2"
+openstack-configure set /etc/neutron/neutron.conf DEFAULT dns_domain openstack.domain.tld
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name europe-london
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken http_connect_timeout 5
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken http_request_max_retries 3
@@ -444,7 +445,11 @@ cp /etc/neutron/l3_agent.ini /etc/neutron/l3_agent.ini.orig
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_workers 5
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_state_report_workers 5
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridge br-physical
-openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-physical
+openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-provider
+
+cp /etc/neutron/lbaas_agent.ini /etc/neutron/lbaas_agent.ini.orig
+openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT ovs_integration_bridge br-provider
+openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT interface_driver neutron.plugins.services.agent_loadbalancer.plugin.LoadBalancerPluginv2
 
 cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openvswitch_agent.ini.orig
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings external:br-physical
@@ -463,15 +468,14 @@ OLD="$(openstack-configure get /etc/neutron/plugins/ml2/ml2_conf.ini ml2 tenant_
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 tenant_network_types "${OLD:+${OLD},}vlan"
 
 cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
-# TODO: !! Enabling this and neutron.conf:DEFAULT:service_plugins resulted in MySQL errors !!
-#openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers service_provider \
-#    LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
-#openstack-configure set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch # TODO: ?! Needs to be done manually !?
+openstack-configure set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth auth_url "http://${ctrlnode}:35357/v2.0"
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_username neutron
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_password "${neutron_pass}"
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_tenant_name service
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth region europe-london
+openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers service_provider \
+    LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
 
 # ======================================================================
 # Setup Ironic
@@ -499,6 +503,10 @@ curl -s http://${LOCALSERVER}/PXEBoot/openstack-services > \
     /etc/init.d/openstack-services
 chmod +x /etc/init.d/openstack-services
 /etc/init.d/openstack-services restart
+
+# ======================================================================
+# Sync/upgrade the database to create the missing tables for LBaaSv2.
+neutron-db-manage --config-file /etc/neutron/neutron.conf upgrade head
 
 # ======================================================================
 # Create services and service users.
@@ -687,13 +695,6 @@ openstack volume type set --property volume_backend_name=NFS nfs
 set -x
 
 # ======================================================================
-# Setup Open vSwitch.
-ovs-vsctl add-br br-physical
-#ovs-vsctl add-port br-physical eth1 # TODO: !! This will cut traffic on eth1 !!
-ovs-vsctl add-br br-provider
-ovs-vsctl add-port br-provider eth0
-
-# ======================================================================
 # Setup Open iSCSI.
 iscsiadm -m iface -I eth1 --op=new
 iscsiadm -m iface -I eth1 --op=update -n iface.vlan_priority -v 1
@@ -760,6 +761,12 @@ neutron router-gateway-set --fixed-ip subnet_id=subnet-physical,ip_address=10.0.
 set -- $(neutron port-list -c id -c fixed_ips | grep 10.0.0.200)
 [ -n "${2}" ] && neutron port-update --name port-external "${2}"
 set -e
+
+# ======================================================================
+# Create a bunch (20) of floating IPs.
+for i in {0..19}; do
+    openstack ip floating create physical
+done
 
 # ======================================================================
 # Import a bunch of external images.
