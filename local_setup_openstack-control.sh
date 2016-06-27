@@ -413,10 +413,11 @@ openstack-configure set /etc/neutron/neutron.conf DEFAULT availability_zone nova
 openstack-configure set /etc/neutron/neutron.conf DEFAULT core_plugin neutron.plugins.ml2.plugin.Ml2Plugin
 openstack-configure set /etc/neutron/neutron.conf DEFAULT notify_nova_on_port_status_changes True
 openstack-configure set /etc/neutron/neutron.conf DEFAULT notify_nova_on_port_data_changes True
-# TODO: !! MySQL errors !!
+# TODO: !! MySQL errors when enabling 'lbaasv2' !!
+# TODO: !! Install and enable FWaaS and VPNaaS as soon as they're available !!
 #OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins)"
 #openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins \
-#    "${OLD:+${OLD},}neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2"
+#    "${OLD:+${OLD},}lbaasv2,fwaas,vpnaas"
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name europe-london
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken http_connect_timeout 5
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken http_request_max_retries 3
@@ -437,7 +438,7 @@ openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT enable_metadata_netw
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT dhcp_domain openstack.domain.tld
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT dnsmasq_dns_servers 10.0.0.254
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT enable_isolated_metadata True
-openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT ovs_integration_bridge br-physical
+openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT ovs_integration_bridge br-provider
 
 cp /etc/neutron/l3_agent.ini /etc/neutron/l3_agent.ini.orig
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_workers 5
@@ -449,6 +450,7 @@ cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openv
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings external:br-physical
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs integration_bridge br-physical
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
+openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs integration_bridge br-provider
 
 cp /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugins/ml2/ml2_conf.ini.orig
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini securitygroup firewall_driver iptables_hybrid
@@ -457,6 +459,8 @@ openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 type_drivers "
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 extension_drivers port_security
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks external
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_vlan network_vlan_ranges external:90:99
+OLD="$(openstack-configure get /etc/neutron/plugins/ml2/ml2_conf.ini ml2 tenant_network_types)"
+openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 tenant_network_types "${OLD:+${OLD},}vlan"
 
 cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
 # TODO: !! Enabling this and neutron.conf:DEFAULT:service_plugins resulted in MySQL errors !!
@@ -564,34 +568,80 @@ set -e
 # Create new security groups.
 set +e # This require that a nova compute exists apparently, so make sure
        # we don't bomb out here.
-openstack security group create --description "Allow incoming SSH connections."  ssh
-openstack security group rule create --proto tcp --dst-port   22 ssh
-openstack security group rule create --proto udp --dst-port   22 ssh
-openstack security group rule create --proto icmp ssh
+
+clean_security_group() {
+    neutron security-group-rule-list -f csv -c id -c security_group | \
+        grep "\"${1}\"" | \
+        sed -e 's@"@@g' -e 's@,.*@@' | \
+        while read grp; do
+	    neutron security-group-rule-delete "${grp}"
+	done
+}
+
+# Modify the default security group to allow everything.
+clean_security_group default
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 1 \
+    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 default
+neutron security-group-rule-create --direction ingress --protocol udp --port-range-min 1 \
+    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 default
+neutron security-group-rule-create --direction egress  --protocol tcp --port-range-min 1 \
+    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 default
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 1 \
+    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 default
+neutron security-group-rule-create --direction ingress --protocol icmp --remote-ip-prefix \
+    0.0.0.0/0 default
+neutron security-group-rule-create --direction egress  --protocol icmp --remote-ip-prefix \
+    0.0.0.0/0 default
+
+openstack security group create --description "Allow incoming SSH connections." ssh
+clean_security_group ssh
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 22 \
+    --port-range-max 22 --remote-ip-prefix 0.0.0.0/0 ssh
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 22 \
+    --port-range-max 22 --remote-ip-prefix 0.0.0.0/0 ssh
+
 openstack security group create --description "Allow incoming HTTP/HTTPS connections." web
-openstack security group rule create --proto tcp --dst-port   80 web
-openstack security group rule create --proto udp --dst-port   80 web
-openstack security group rule create --proto tcp --dst-port  443 web
-openstack security group rule create --proto udp --dst-port  443 web
-openstack security group rule create --proto icmp web
+clean_security_group web
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min  80 \
+    --port-range-max 80 --remote-ip-prefix 0.0.0.0/0 web
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 443 \
+    --port-range-max 443 --remote-ip-prefix 0.0.0.0/0 web
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min  80 \
+    --port-range-max 80 --remote-ip-prefix 0.0.0.0/0 web
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 443 \
+    --port-range-max 443 --remote-ip-prefix 0.0.0.0/0 web
+
 openstack security group create --description "Allow incoming DNS connections." dns
-openstack security group rule create --proto tcp --dst-port   53 dns
-openstack security group rule create --proto udp --dst-port   53 dns
-openstack security group rule create --proto icmp dns
+clean_security_group dns
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 53 \
+    --port-range-max 53 --remote-ip-prefix 0.0.0.0/0 dns
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 53 \
+    --port-range-max 53 --remote-ip-prefix 0.0.0.0/0 dns
+
 openstack security group create --description "Allow incoming LDAP/LDAPS connections." ldap
-openstack security group rule create --proto tcp --dst-port  389 ldap
-openstack security group rule create --proto udp --dst-port  389 ldap
-openstack security group rule create --proto tcp --dst-port  636 ldap
-openstack security group rule create --proto udp --dst-port  636 ldap
-openstack security group rule create --proto icmp ldap
+clean_security_group ldap
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 389 \
+    --port-range-max 389 --remote-ip-prefix 0.0.0.0/0 ldap
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 636 \
+    --port-range-max 389 --remote-ip-prefix 0.0.0.0/0 ldap
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 389 \
+    --port-range-max 389 --remote-ip-prefix 0.0.0.0/0 ldap
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 636 \
+    --port-range-max 636 --remote-ip-prefix 0.0.0.0/0 ldap
+
 openstack security group create --description "Allow incoming MySQL connections." mysql
-openstack security group rule create --proto tcp --dst-port 3306 mysql
-openstack security group rule create --proto udp --dst-port 3306 mysql
-openstack security group rule create --proto icmp mysql
+clean_security_group mysql
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 3306 \
+    --port-range-max 3306 --remote-ip-prefix 0.0.0.0/0 mysql
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 3306 \
+    --port-range-max 3306 --remote-ip-prefix 0.0.0.0/0 mysql
+
 openstack security group create --description "Allow incoming PostgreSQL connections." psql
-openstack security group rule create --proto tcp --dst-port 5432 psql
-openstack security group rule create --proto udp --dst-port 5432 psql
-openstack security group rule create --proto icmp psql
+clean_security_group psql
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 5432 \
+    --port-range-max 5432 --remote-ip-prefix 0.0.0.0/0 psql
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 5432 \
+    --port-range-max 5432 --remote-ip-prefix 0.0.0.0/0 psql
 set -x
 
 # ======================================================================

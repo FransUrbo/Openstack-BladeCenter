@@ -30,9 +30,7 @@ set -xe
 # ======================================================================
 
 # Get IP of this host
-set -- $(/sbin/ip address | egrep " eth.* UP ")
-iface="$(echo "${2}" | sed 's@:@@')"
-set -- $(/sbin/ifconfig "${iface}" | grep ' inet ')
+set -- $(/sbin/ifconfig "eth1" | grep ' inet ')
 ip="$(echo "${2}" | sed 's@.*:@@')"
 
 # Get the hostname. This is the simplest and fastest.
@@ -102,6 +100,7 @@ for init in /etc/init.d/designate-*; do $init restart; done
 cp /etc/neutron/neutron.conf /etc/neutron/neutron.conf.orig
 openstack-configure set /etc/neutron/neutron.conf DEFAULT default_availability_zones nova
 openstack-configure set /etc/neutron/neutron.conf DEFAULT availability_zone nova
+openstack-configure set /etc/neutron/neutron.conf DEFAULT core_plugin neutron.plugins.ml2.plugin.Ml2Plugin
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name europe-london
 openstack-configure set /etc/neutron/neutron.conf database connection \
     "$(get_debconf_value "openstack" "keystone/password/neutron")"
@@ -109,6 +108,8 @@ openstack-configure set /etc/neutron/neutron.conf database use_db_reconnect true
 
 cp /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugins/ml2/ml2_conf.ini.orig
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini securitygroup firewall_driver iptables_hybrid
+OLD="$(openstack-configure get /etc/neutron/plugins/ml2/ml2_conf.ini ml2 tenant_network_types)"
+openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 tenant_network_types "${OLD:+${OLD},}vlan"
 
 cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth auth_url "http://${ctrlnode}:35357/v2.0"
@@ -135,7 +136,7 @@ openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_tenan
 #    "LOADBALANCERV2:Octavia:neutron_lbaas.drivers.octavia.driver.OctaviaDriver:default"
 
 cp /etc/neutron/l3_agent.ini /etc/neutron/l3_agent.ini.orig
-openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-physical
+openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-provider
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridge br-physical
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_workers 5
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_state_report_workers 5
@@ -167,6 +168,9 @@ openstack-configure set /etc/nova/nova.conf DEFAULT ram_allocation_ratio 1.0
 openstack-configure set /etc/nova/nova.conf DEFAULT disk_allocation_ratio 1.0
 openstack-configure set /etc/nova/nova.conf DEFAULT default_ephemeral_format xfs
 openstack-configure set /etc/nova/nova.conf DEFAULT public_interface eth1
+openstack-configure set /etc/nova/nova.conf DEFAULT console_driver nova.console.xvp.XVPConsoleProxy
+openstack-configure set /etc/nova/nova.conf DEFAULT console_public_hostname "${hostname}"
+openstack-configure set /etc/nova/nova.conf DEFAULT console_topic console
 openstack-configure set /etc/nova/nova.conf database connection "mysql+pymysql://nova:${nova_pass}@${ctrlnode}/nova"
 openstack-configure set /etc/nova/nova.conf api_database connection "mysql+pymysql://novaapi:${nova_api_pass}@${ctrlnode}/novaapi"
 openstack-configure set /etc/nova/nova.conf cinder cross_az_attach True
@@ -208,6 +212,15 @@ openstack-configure set /etc/nova/nova.conf glance api_servers "http://${ctrlnod
 openstack-configure set /etc/nova/nova.conf glance num_retries 5
 #openstack-configure set /etc/nova/nova.conf glance verify_glance_signatures true
 openstack-configure set /etc/nova/nova.conf barbican os_region_name europe-london
+openstack-configure set /etc/nova/nova.conf vnc enabled true
+openstack-configure set /etc/nova/nova.conf vnc vncserver_listen \$my_ip
+openstack-configure set /etc/nova/nova.conf vnc vncserver_proxyclient_address \$my_ip
+openstack-configure set /etc/nova/nova.conf vnc novncproxy_host \$my_ip
+openstack-configure set /etc/nova/nova.conf vnc novncproxy_base_url http://${ip}:6080/vnc_auto.html
+openstack-configure set /etc/nova/nova.conf vnc novncproxy_port 6080
+openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_host \$my_ip
+openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_base_url http://${ip}:6081/console
+openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_port 6081
 ini_unset_value /etc/nova/nova.conf default_domain_name
 ini_unset_value /etc/nova/nova.conf domain_name
 for init in /etc/init.d/nova-*; do $init restart; done
@@ -228,6 +241,7 @@ ovs-vsctl add-port br-provider eth0
 cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openvswitch_agent.ini.orig
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings provider:br-provider
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
+openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs integration_bridge br-provider
 for init in /etc/init.d/*openvswitch*; do $init restart; done
 
 # ======================================================================

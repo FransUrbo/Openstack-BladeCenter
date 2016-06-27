@@ -178,8 +178,9 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     # Install the Compute packages.
     # nova-compute-ironic : Conflicts: nova-compute-kvm but 2:13.0.0-4 is to be installed
     # nova-compute-kvm : Conflicts: nova-compute-ironic but 2:13.0.0-4 is to be installed
-    do_install nova-compute-kvm nova-console magnum-conductor fping ovmf \
-        neutron-openvswitch-agent neutron-lbaas-agent designate-agent neutron-l3-agent
+    do_install nova-compute-kvm nova-console nova-consoleproxy magnum-conductor \
+        fping ovmf neutron-openvswitch-agent neutron-lbaas-agent designate-agent \
+        neutron-l3-agent
 
     # ======================================================================
 
