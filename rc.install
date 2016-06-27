@@ -78,7 +78,8 @@ if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
     apt-get update
     apt-get -y dist-upgrade
 
-    # Need to modify sshd config in Sid. TODO: Generate new, personal, ssh keys.
+    # Need to modify sshd config in Sid.
+    # TODO: Generate new, personal, ssh keys with ECDSA.
     echo 'PubkeyAcceptedKeyTypes=+ssh-dss' >> /etc/ssh/sshd_config
     systemctl restart ssh
 
@@ -91,30 +92,6 @@ if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
     # for Docker). Should leave us with only 3.16.0. We remove it so that
     # it's not accidentally booted.
     dpkg --purge linux-image-4.6.0-1-amd64 linux-image-amd64
-
-    # Setup internal network.
-    ipnr="$(echo "${ip}" | sed 's@.*\.@@')"
-    cp /etc/network/interfaces /etc/network/interfaces.orig
-    cat <<EOF >> /etc/network/interfaces
-
-# Provider network
-auto br-provider
-iface br-provider inet static
-	address 10.99.0.${ipnr}
-	netmask 255.255.255.0
-	network 10.99.0.0
-	broadcast 10.99.0.255
-	dns-nameservers 10.0.0.254
- 
-# Provider network interface
-auto eth0
-iface eth0 inet manual
-	up ifconfig $IFACE 0.0.0.0 up
-	up ip link set $IFACE promisc on
-	down ip link set $IFACE promisc off
-	down ifconfig $IFACE down
-EOF
-    ifup eth0
 
     # Disable IPv6.
     cp /etc/sysctl.conf /etc/sysctl.conf.orig
@@ -132,6 +109,74 @@ net.ipv4.conf.all.rp_filter = 0
 net.ipv4.conf.default.rp_filter = 0
 EOF
     sysctl -p
+
+    # Setup the networking and Open vSwitch.
+    # TODO|NOTE: This can be "dangerous". If we don't get
+    #            "br-physical" up and running, everything else
+    #            here will fail!!
+    #            BUT (!) it seems that MAYBE (!) it works fine IF
+    #            doing from scratch.
+    ipnr="$(echo "${ip}" | sed 's@.*\.@@')"
+    cp /etc/network/interfaces /etc/network/interfaces.orig
+    cat <<EOF > /etc/network/interfaces
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+source /etc/network/interfaces.d/*
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+# =================================
+
+# Provider/Physical network.
+allow-ovs br-physical
+iface br-physical inet static
+	address 10.0.4.${ipnr}
+	netmask 255.255.0.0
+	network 10.0.4.0
+	broadcast 10.0.255.255
+	gateway 10.0.0.254
+	dns-nameservers 10.0.0.254
+ 
+auto eth1
+iface eth1 inet manual
+	up ifconfig $IFACE 0.0.0.0 up
+	up ip link set $IFACE promisc on
+	down ip link set $IFACE promisc off
+	down ifconfig $IFACE down
+
+# =================================
+
+# Tenant network.
+allow-ovs br-provider
+iface br-provider inet static
+	address 10.99.0.${ipnr}
+	netmask 255.255.255.0
+	network 10.99.0.0
+	broadcast 10.99.0.255
+	dns-nameservers 10.0.0.254
+ 
+auto eth0
+iface eth0 inet manual
+	up ifconfig $IFACE 0.0.0.0 up
+	up ip link set $IFACE promisc on
+	down ip link set $IFACE promisc off
+	down ifconfig $IFACE down
+EOF
+
+    ovs-vsctl init
+
+    ovs-vsctl add-br br-provider
+    ovs-vsctl add-port br-provider eth0
+
+    ovs-vsctl add-br br-physical
+    ovs-vsctl add-port br-physical eth1
+
+    ifdown eth0      ; ifdown eth1
+    ifup eth0        ; ifup eth1
+    ifup br-provider ; ifup br-physical
 
     # Get the Openstack RC file. Going to need that both in the testing of
     # Keystone as well as local Openstack configuration further down.
@@ -180,7 +225,7 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     # nova-compute-kvm : Conflicts: nova-compute-ironic but 2:13.0.0-4 is to be installed
     do_install nova-compute-kvm nova-console nova-consoleproxy magnum-conductor \
         fping ovmf neutron-openvswitch-agent neutron-lbaas-agent designate-agent \
-        neutron-l3-agent
+        neutron-l3-agent neutron-vpnaas-agent
 
     # ======================================================================
 
@@ -317,8 +362,7 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     for agent in ceilometer-agent-compute ceilometer-agent-ipmi \
         ceilometer-agent-notification ceilometer-agent-central \
         designate-agent neutron-dhcp-agent neutron-metering-agent \
-        neutron-lbaas-agent python-neutron-lbaas neutron-l3-agent \
-        neutron-vpnaas-agent python-neutron-vpnaas
+        neutron-l3-agent neutron-lbaas-agent neutron-vpnaas-agent
     do
         AGENTs="${AGENTs} ${agent}"
     done
