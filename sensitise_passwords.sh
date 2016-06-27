@@ -6,6 +6,7 @@ rgrep "$(printf '\t')password$(printf '\t')" * | \
 	sed 's@.*\t@@' | sort | uniq | \
 	while read passwd; do
 		[ -z "${passwd}" ] && continue
+		echo "${password}" | grep -q "secret" && continue
 
 		new_pass="secret$(printf "%0.2d" "${NR}")"
 		NR="$(expr "${NR}" + 1)"
