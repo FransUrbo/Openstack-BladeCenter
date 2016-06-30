@@ -200,7 +200,7 @@ openstack-configure set /etc/nova/nova.conf DEFAULT routing_source_ip \$my_ip
 openstack-configure set /etc/nova/nova.conf DEFAULT metadata_host \$my_ip
 openstack-configure set /etc/nova/nova.conf DEFAULT dhcp_lease_time $(expr 60 \* 60 \* 6)
 openstack-configure set /etc/nova/nova.conf DEFAULT use_single_default_gateway true
-#openstack-configure set /etc/nova/nova.conf DEFAULT linuxnet_ovs_integration_bridge br-provider
+openstack-configure set /etc/nova/nova.conf DEFAULT linuxnet_ovs_integration_bridge br-provider
 # TODO: [...] lots of networking/nat stuff after that option..
 openstack-configure set /etc/nova/nova.conf DEFAULT instance_usage_audit True
 openstack-configure set /etc/nova/nova.conf DEFAULT instance_usage_audit_period hour
@@ -223,7 +223,8 @@ openstack-configure set /etc/nova/nova.conf neutron default_domain_name default
 openstack-configure set /etc/nova/nova.conf neutron project_domain_name default
 openstack-configure set /etc/nova/nova.conf neutron project_name service
 openstack-configure set /etc/nova/nova.conf neutron user_domain_name default
-openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
+openstack-configure set /etc/nova/nova.conf neutron ovs_bridge br-provider
+#openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
 openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_version 3
 openstack-configure set /etc/nova/nova.conf keystone_authtoken identity_uri "http://${ctrlnode}:35357/v3"
 openstack-configure set /etc/nova/nova.conf ironic admin_tenant_name service
@@ -295,6 +296,8 @@ openstack-configure set /etc/cinder/cinder.conf lvm volume_group blade_center
 cp /etc/glance/glance-api.conf /etc/glance/glance-api.conf.orig
 openstack-configure set /etc/glance/glance-api.conf DEFAULT rpc_backend rabbit
 openstack-configure set /etc/glance/glance-api.conf DEFAULT registry_host "${ip}"
+openstack-configure set /etc/glance/glance-api.conf DEFAULT metadata_encryption_key \
+    "$(get_debconf_value "openstack" "glance/metadata_encryption_key")"
 openstack-configure set /etc/glance/glance-api.conf database use_db_reconnect true
 # TODO: Put images in Cinder
 #openstack-configure set /etc/glance/glance-api.conf glance_store stores cinder,file,http
@@ -389,6 +392,11 @@ openstack-configure set /etc/glance/glance-scrubber.conf DEFAULT registry_host "
 openstack-configure set /etc/glance/glance-scrubber.conf database "mysql+pymysql://glance:${glance_pass}@${ctrlnode}/glance"
 openstack-configure set /etc/glance/glance-scrubber.conf database use_db_reconnect true
 
+# Configure Barbican.
+cp /etc/barbican/barbican.conf /etc/barbican/barbican.conf.orig
+openstack-configure set /etc/barbican/barbican.conf DEFAULT metadata_encryption_key \
+    "$(get_debconf_value "openstack" "glance/metadata_encryption_key")"
+
 # Configure Ceilometer.
 cp /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.orig
 openstack-configure set /etc/ceilometer/ceilometer.conf DEFAULT rpc_backend rabbit
@@ -444,18 +452,20 @@ openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT ovs_integration_brid
 cp /etc/neutron/l3_agent.ini /etc/neutron/l3_agent.ini.orig
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_workers 5
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_state_report_workers 5
+# TODO: Kevin Benton say this should be empty value!
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridge br-physical
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-provider
 
 cp /etc/neutron/lbaas_agent.ini /etc/neutron/lbaas_agent.ini.orig
 openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT ovs_integration_bridge br-provider
-openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT interface_driver neutron.plugins.services.agent_loadbalancer.plugin.LoadBalancerPluginv2
+openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT interface_driver \
+    neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2
 
 cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openvswitch_agent.ini.orig
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings external:br-physical
-openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs integration_bridge br-physical
-openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs integration_bridge br-provider
+openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs tunnel_bridge br-tun
+openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
 
 cp /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugins/ml2/ml2_conf.ini.orig
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini securitygroup firewall_driver iptables_hybrid
@@ -465,7 +475,7 @@ openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 extension_driv
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks external
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_vlan network_vlan_ranges external:90:99
 OLD="$(openstack-configure get /etc/neutron/plugins/ml2/ml2_conf.ini ml2 tenant_network_types)"
-openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 tenant_network_types "${OLD:+${OLD},}vlan"
+openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 tenant_network_types "${OLD:+${OLD},}vlan,flat"
 
 cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
 openstack-configure set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch
@@ -481,8 +491,35 @@ openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers servic
 # Setup Ironic
 cp /etc/ironic/ironic.conf /etc/ironic/ironic.conf.orig
 openstack-configure set /etc/ironic/ironic.conf DEFAULT auth_strategy keystone
+openstack-configure set /etc/ironic/ironic.conf DEFAULT my_ip "${ip}"
 openstack-configure set /etc/ironic/ironic.conf glance  auth_strategy keystone
 openstack-configure set /etc/ironic/ironic.conf neutron auth_strategy keystone
+openstack-configure set /etc/ironic/ironic.conf amt protocol http
+openstack-configure set /etc/ironic/ironic.conf api host_ip "${ip}"
+openstack-configure set /etc/ironic/ironic.conf api enable_ssl_api false
+openstack-configure set /etc/ironic/ironic.conf database use_db_reconnect true
+openstack-configure set /etc/ironic/ironic.conf dhcp dhcp_provider neutron
+openstack-configure set /etc/ironic/ironic.conf glance glance_host \$my_ip
+openstack-configure set /etc/ironic/ironic.conf glance glance_protocol http
+openstack-configure set /etc/ironic/ironic.conf glance glance_api_servers "http://openstack.domain.tld:9292/"
+openstack-configure set /etc/ironic/ironic.conf irmc remote_image_share_root /shares
+openstack-configure set /etc/ironic/ironic.conf irmc remote_image_server \$my_ip
+openstack-configure set /etc/ironic/ironic.conf irmc remote_image_share_type NFS
+openstack-configure set /etc/ironic/ironic.conf keystone region_name europe-london
+openstack-configure set /etc/ironic/ironic.conf keystone_authtoken auth_host "${ip}"
+openstack-configure set /etc/ironic/ironic.conf keystone_authtoken auth_protocol http
+openstack-configure set /etc/ironic/ironic.conf keystone_authtoken admin_user ironic
+openstack-configure set /etc/ironic/ironic.conf keystone_authtoken admin_password \
+    "$(get_debconf_value "ironic-common" "ironic/admin-password")"
+openstack-configure set /etc/ironic/ironic.conf keystone_authtoken auth_port 35357
+openstack-configure set /etc/ironic/ironic.conf keystone_authtoken http_connect_timeout 5
+openstack-configure set /etc/ironic/ironic.conf keystone_authtoken http_request_max_retries 3
+openstack-configure set /etc/ironic/ironic.conf keystone_authtoken admin_tenant_name service
+openstack-configure set /etc/ironic/ironic.conf keystone_authtoken region_name europe-london
+openstack-configure set /etc/ironic/ironic.conf keystone_authtoken memcached_servers 127.0.0.1:11211
+openstack-configure set /etc/ironic/ironic.conf oslo_messaging_rabbit rabbit_host "${ctrlnode}"
+openstack-configure set /etc/ironic/ironic.conf oslo_messaging_rabbit rabbit_userid openstack
+openstack-configure set /etc/ironic/ironic.conf oslo_messaging_rabbit rabbit_password "${rabbit_pass}"
 
 # ======================================================================
 # Setup MongoDB.
@@ -717,20 +754,20 @@ neutron subnet-create --name subnet-physical --dns-nameserver 10.0.0.254 \
     physical 10.0.0.0/16
 
 # Setup the tenant network 97.
-neutron net-create --provider:network_type gre --availability-zone-hint nova \
-    tenant-97
+neutron net-create --shared --provider:network_type gre --availability-zone-hint \
+    nova tenant-97
 neutron subnet-create --name subnet-97 --dns-nameserver 10.0.0.254 \
     --enable-dhcp --ip-version 4 --gateway 10.97.0.1 tenant-97 10.97.0.0/24
 
 # Setup the tenant network 98.
-neutron net-create --provider:network_type gre --availability-zone-hint nova \
-    tenant-98
+neutron net-create --shared --provider:network_type gre --availability-zone-hint \
+    nova tenant-98
 neutron subnet-create --name subnet-98 --dns-nameserver 10.0.0.254 \
     --enable-dhcp --ip-version 4 --gateway 10.98.0.1 tenant-98 10.98.0.0/24
 
 # Setup the tenant network 99.
-neutron net-create --provider:network_type gre --availability-zone-hint nova \
-    tenant-99
+neutron net-create --shared --provider:network_type gre --availability-zone-hint \
+    nova tenant-99
 neutron subnet-create --name subnet-99 --dns-nameserver 10.0.0.254 \
     --enable-dhcp --ip-version 4 --gateway 10.99.0.1 tenant-99 10.99.0.0/24
 
@@ -739,19 +776,18 @@ neutron subnet-create --name subnet-99 --dns-nameserver 10.0.0.254 \
 neutron router-create --distributed False --ha False providers-tenants
 
 # Router port on the provider network 'tenant-97'.
-neutron port-create --name port-tenant97 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.97.0.1 \
-    tenant-97
+neutron port-create --name port-tenant97 --vnic-type normal \
+    --fixed-ip ip_address=10.97.0.1 tenant-97
 neutron router-interface-add providers-tenants port=port-tenant97
 
 # Router port on the provider network 'tenant-98'.
-neutron port-create --name port-tenant98 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.98.0.1 tenant-98
+neutron port-create --name port-tenant98 --vnic-type normal \
+    --fixed-ip ip_address=10.98.0.1 tenant-98
 neutron router-interface-add providers-tenants port=port-tenant98
 
 # Router port on the provider network 'tenant-99'.
-neutron port-create --name port-tenant99 --vnic-type direct \
-    --security-group default --fixed-ip ip_address=10.99.0.1 tenant-99
+neutron port-create --name port-tenant99 --vnic-type normal \
+    --fixed-ip ip_address=10.99.0.1 tenant-99
 neutron router-interface-add providers-tenants port=port-tenant99
 
 # Set the routers default route to external gateway.

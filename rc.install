@@ -146,37 +146,16 @@ iface eth1 inet manual
 	up ip link set $IFACE promisc on
 	down ip link set $IFACE promisc off
 	down ifconfig $IFACE down
-
-# =================================
-
-# Tenant network.
-allow-ovs br-provider
-iface br-provider inet static
-	address 10.99.0.${ipnr}
-	netmask 255.255.255.0
-	network 10.99.0.0
-	broadcast 10.99.0.255
-	dns-nameservers 10.0.0.254
- 
-auto eth0
-iface eth0 inet manual
-	up ifconfig $IFACE 0.0.0.0 up
-	up ip link set $IFACE promisc on
-	down ip link set $IFACE promisc off
-	down ifconfig $IFACE down
 EOF
 
     ovs-vsctl init
-
-    ovs-vsctl add-br br-provider
-    ovs-vsctl add-port br-provider eth0
-
+    ovs-vsctl list-br | \
+        while read br; do
+	    ovs-vsctl del-br "${br}"
+    done
     ovs-vsctl add-br br-physical
     ovs-vsctl add-port br-physical eth1
-
-    ifdown eth0      ; ifdown eth1
-    ifup eth0        ; ifup eth1
-    ifup br-provider ; ifup br-physical
+    ifdown eth1 ; ifup eth1 ; ifup br-physical
 
     # Get the Openstack RC file. Going to need that both in the testing of
     # Keystone as well as local Openstack configuration further down.
