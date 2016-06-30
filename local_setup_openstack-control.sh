@@ -582,30 +582,30 @@ openstack flavor list -f csv --quote none | \
     done
 
 # Create the new flavors.
-openstack flavor create --ram   512 --disk  2 --vcpus 1 --disk  5 m1.nano
-openstack flavor create --ram  1024 --disk 10 --vcpus 1 --disk  5 m1.tiny
-openstack flavor create --ram  2048 --disk 20 --vcpus 1 --disk 10 m1.small
-openstack flavor create --ram  4096 --disk 40 --vcpus 1 m1.medium
-openstack flavor create --ram  8192 --disk 40 --vcpus 1 m1.large
-openstack flavor create --ram 16384 --disk 40 --vcpus 1 m1.xlarge
+openstack flavor create --ram   512 --disk  2 --vcpus 1 --disk  5 m1.1nano
+openstack flavor create --ram  1024 --disk 10 --vcpus 1 --disk  5 m1.2tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 1 --disk 10 m1.3small
+openstack flavor create --ram  4096 --disk 40 --vcpus 1 m1.4medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 1 m1.5large
+openstack flavor create --ram 16384 --disk 40 --vcpus 1 m1.6xlarge
 
-openstack flavor create --ram  1024 --disk 10 --vcpus 2 --disk 5 m2.tiny
-openstack flavor create --ram  2048 --disk 20 --vcpus 2 m2.small
-openstack flavor create --ram  4096 --disk 40 --vcpus 2 m2.medium
-openstack flavor create --ram  8192 --disk 40 --vcpus 2 m2.large
-openstack flavor create --ram 16384 --disk 40 --vcpus 2 m2.xlarge
+openstack flavor create --ram  1024 --disk 10 --vcpus 2 --disk 5 m2.1tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 2 m2.2small
+openstack flavor create --ram  4096 --disk 40 --vcpus 2 m2.3medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 2 m2.4large
+openstack flavor create --ram 16384 --disk 40 --vcpus 2 m2.5xlarge
 
-openstack flavor create --ram  1024 --disk 20 --vcpus 3 --disk  5 m3.tiny
-openstack flavor create --ram  2048 --disk 20 --vcpus 3 --disk 10 m3.small
-openstack flavor create --ram  4096 --disk 40 --vcpus 3 m3.medium
-openstack flavor create --ram  8192 --disk 40 --vcpus 3 m3.large
-openstack flavor create --ram 16384 --disk 40 --vcpus 3 m3.xlarge
+openstack flavor create --ram  1024 --disk 20 --vcpus 3 --disk  5 m3.1tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 3 --disk 10 m3.2small
+openstack flavor create --ram  4096 --disk 40 --vcpus 3 m3.3medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 3 m3.4large
+openstack flavor create --ram 16384 --disk 40 --vcpus 3 m3.5xlarge
 
-openstack flavor create --ram  1024 --disk 10 --vcpus 4 --disk  5 m4.tiny
-openstack flavor create --ram  2048 --disk 20 --vcpus 4 --disk 10 m4.small
-openstack flavor create --ram  4096 --disk 40 --vcpus 4 m4.medium
-openstack flavor create --ram  8192 --disk 40 --vcpus 4 m4.large
-openstack flavor create --ram 16384 --disk 40 --vcpus 4 m4.xlarge
+openstack flavor create --ram  1024 --disk 10 --vcpus 4 --disk  5 m4.1tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 4 --disk 10 m4.2small
+openstack flavor create --ram  4096 --disk 40 --vcpus 4 m4.3medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 4 m4.4large
+openstack flavor create --ram 16384 --disk 40 --vcpus 4 m4.5xlarge
 set -e
 
 # ======================================================================
@@ -687,6 +687,13 @@ neutron security-group-rule-create --direction ingress --protocol tcp --port-ran
     --port-range-max 5432 --remote-ip-prefix 0.0.0.0/0 psql
 neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 5432 \
     --port-range-max 5432 --remote-ip-prefix 0.0.0.0/0 psql
+
+openstack security group create --description "Allow incoming/outgoing ICMP connections." icmp
+clean_security_group icmp
+neutron security-group-rule-create --direction ingress --protocol icmp --remote-ip-prefix \
+    0.0.0.0/0 icmp
+neutron security-group-rule-create --direction egress  --protocol icmp --remote-ip-prefix \
+    0.0.0.0/0 icmp
 set -x
 
 # ======================================================================
