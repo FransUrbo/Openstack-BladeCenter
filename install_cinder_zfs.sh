@@ -29,6 +29,10 @@ if [ ! -e "/root/admin-openrc" ]; then
 else
     set +x # Disable showing commands this do (password especially).
     . /root/admin-openrc
+    if [ -z "${OS_AUTH_URL}" ]; then
+        echo "Something wrong with the admin-openrc!"
+        exit 1
+    fi
 fi
 
 set -xe
@@ -81,7 +85,7 @@ san_zfs_command = /var/www/PXEBoot/zfswrapper
 verbose = true
 EOF
 
-TODO: !! See the top of the file !!
+# TODO: !! See the top of the file !!
 #OLD="$(openstack-configure get /etc/cinder/cinder.conf DEFAULT enabled_backends)"
 #openstack-configure set /etc/cinder/cinder.conf DEFAULT enabled_backends "${OLD:+${OLD},}zol"
 #for init in /etc/init.d/cinder-*; do $init restart; done
