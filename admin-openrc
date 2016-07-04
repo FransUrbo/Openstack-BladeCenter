@@ -1,7 +1,22 @@
+# Get the hostname. This is the simplest and fastest.
+hostname="$(cat /etc/hostname)"
+
+# Get IP of this host
+set -- $(/sbin/ifconfig eth1 | grep ' inet ')
+ip="$(echo "${2}" | sed 's@.*:@@')"
+if [ -z "${ip}" ]; then
+    ip="$(host "${hostname}" | grep 'has address' | sed 's@.* @@')"
+    if [ -z "${ip}" ]; then
+        echo "Can't figure out the IP address!"
+        exit 1
+    fi
+fi
+export hostname ip
+
 export OS_AUTH_URL="http://openstack.domain.tld:35357/v3"
 export OS_IDENTITY_API_VERSION="3"
 export OS_IMAGE_API_VERSION="2"
-export OS_PASSWORD="secret39"
+export OS_PASSWORD="secret40"
 export OS_PROJECT_DOMAIN_NAME="default"
 export OS_PROJECT_NAME="admin"
 export OS_USERNAME="admin"
