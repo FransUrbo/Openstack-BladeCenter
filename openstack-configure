@@ -1,16 +1,22 @@
 #!/bin/sh
 
+# By default, be verbose.
+export PKGOS_VERBOSE=yes
+
 if [ ! -f "/usr/share/openstack-pkg-tools/pkgos_func" ]; then
    echo "ERROR: openstack-pkg-tools missing"
    exit 1
 fi
 
 . /usr/share/openstack-pkg-tools/pkgos_func
-[ "${1}" != "get" ] && export PKGOS_VERBOSE=yes
+
+# If we're getting, we can't be verbose, because
+# we'll returning "pkgos_inifile: Getting value in ..."
+[ "${1}" = "get" ] && export PKGOS_VERBOSE=no
 
 pkgos_inifile $*
 
-if [ "${1}" = "get" -a -n "${RET}" -a "${RET}" != "NO_VALUE" ]
+if [ "${1}" = "get" -a -n "${RET}" -a "${RET}" != "NOT_FOUND" ]
 then
     echo "${RET}"
 fi
