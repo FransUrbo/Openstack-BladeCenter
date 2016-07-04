@@ -1,0 +1,26 @@
+* SSL/HTTPS everwhere.
+  + Compute API endpoints
+  + Identity API endpoints
+  + Networking API endpoints
+  + Storage API endpoints
+  + Messaging server
+  + Database server
+  + Dashboard
+* Multi-host Controller.
+  + Multi-master MySQL
+  + Multi-master RabbitMQ
+  + Multi-master MongoDB
+* Compute -> Console
+* Setup/Fix ZoL volume storage
+* Install and configure Object storage (Swift)
+* Magnum [container] instance (require Swift)
+* LDAP authentication
+
+* Verify LVM volume storage
+* Verify NFS volume storage
+* Verify Manila (Shared fs)
+* Verify Mistral (Workflow)
+* Verify Trove (DBaaS)
+  http://docs.openstack.org/icehouse/install-guide/install/yum/content/trove-verify.html
+* Verify Celiometer (Telemetry)
+  http://docs.openstack.org/icehouse/install-guide/install/yum/content/ceilometer-verify.html

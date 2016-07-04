@@ -1,0 +1,22 @@
+* Metadata proxy won't work from instance.
+  checking http://169.254.169.254/2009-04-04/instance-id
+  => /var/log/neutron/neutron-ns-metadata-proxy-ddbf5d96-a4b3-45b0-9337-77e5da47c2a0.log
+  2016-06-29 21:23:24.205 20685 INFO neutron.wsgi [-] (20685) wsgi starting up on http://0.0.0.0:80
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy [-] Unexpected error.
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy Traceback (most recent call last):
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy   File "/usr/lib/python2.7/dist-packages/neutron/agent/metadata/namespace_proxy.py", line 57, in __call__
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy     req.body)
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy   File "/usr/lib/python2.7/dist-packages/neutron/agent/metadata/namespace_proxy.py", line 89, in _proxy_request
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy     connection_type=agent_utils.UnixDomainHTTPConnection)
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy   File "/usr/lib/python2.7/dist-packages/httplib2/__init__.py", line 1607, in request
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy     (response, content) = self._request(conn, authority, uri, request_uri, method, body, headers, redirections, cachekey)
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy   File "/usr/lib/python2.7/dist-packages/httplib2/__init__.py", line 1349, in _request
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy     (response, content) = self._conn_request(conn, request_uri, method, body, headers)
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy   File "/usr/lib/python2.7/dist-packages/httplib2/__init__.py", line 1305, in _conn_request
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy     response = conn.getresponse()
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy   File "/usr/lib/python2.7/httplib.py", line 1123, in getresponse
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy     raise ResponseNotReady()
+  2016-06-29 21:28:16.321 20685 ERROR neutron.agent.metadata.namespace_proxy ResponseNotReady
+
+* Web GUI -> Project -> Compute -> Instances -> Console just say:
+  "console is currently unavailable. Please try again later."
