@@ -1,0 +1,32 @@
+#!/bin/bash
+
+case "$1" in
+     restart)
+	# Restart all Openstack servers.
+        for init in \
+            /etc/init.d/{apache,designate,manila,nova,cinder,glance,neutron,zaqar,aodh,trove,mongodb,memcached,rabbitmq}*
+        do
+            [ -e "${init}" ] && ${init} restart
+        done
+        ;;
+
+     start)
+	# Start all Openstack servers.
+        for init in \
+            /etc/init.d/{apache,designate,manila,nova,cinder,glance,neutron,zaqar,aodh,trove,mongodb,memcached,rabbitmq}*
+        do
+            [ -e "${init}" ] && ${init} start
+        done
+        ;;
+
+     stop)
+	# Stop all Openstack servers.
+        for init in \
+            /etc/init.d/{apache,designate,manila,nova,cinder,glance,neutron,zaqar,aodh,trove,mongodb,memcached,rabbitmq}*
+        do
+            [ -e "${init}" ] && ${init} stop
+        done
+        ;;
+esac
+
+exit 0
