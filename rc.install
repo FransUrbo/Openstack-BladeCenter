@@ -45,7 +45,7 @@ fi
 [ -f "/var/tmp/rc.install.done" ] && exit 0
 
 # Need to wait for the interface to come up.
-while ! ping -c1 ftp.uk.debian.org > /dev/null 2>&1; do sleep 5; done
+while ! ping -q -c1 ftp.uk.debian.org; do sleep 5; done
 
 exec 1<&-		# Close STDOUT file descriptor
 exec 2<&-		# Close STDERR file descriptor
@@ -55,16 +55,20 @@ chmod 0600 /var/tmp/rc.install.log
 
 echo "=> Starting rc.install: $(date) <="
 
+# Get the Openstack RC file. Going to need that both in the testing of
+# Keystone as well as local Openstack configuration further down.
+curl -s http://${LOCALSERVER}/PXEBoot/admin-openrc > /root/admin-openrc
+chmod 600 /root/admin-openrc
+set +x # Disable showing commands this do (password especially).
+. /root/admin-openrc
+if [ -z "${OS_AUTH_URL}" ]; then
+    echo "Something wrong with the admin-openrc!"
+    exit 1
+fi
+
 set -ex
 
-# Get IP of this host
-set -- $(/sbin/ip address | egrep " eth.* UP ")
-iface="$(echo "${2}" | sed 's@:@@')"
-set -- $(/sbin/ifconfig "${iface}" | grep ' inet ')
-ip="$(echo "${2}" | sed 's@.*:@@')"
-
-# Get the hostname. This is the simplest and fastest.
-hostname="$(cat /etc/hostname)"
+# ======================================================================
 
 # Make sure that we're using the real IP as hostname, not the localhost address.
 sed -i "s@^127.*${hostname}@${ip}\t${hostname}.$(dnsdomainname)\t${hostname}@" /etc/hosts
@@ -85,7 +89,7 @@ if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
 
     # Install the HP utilities, dbconfig and Openstack packaging tools.
     do_install hp-snmp-agents hponcfg dbconfig-mysql openstack-pkg-tools \
-        vlan openvswitch-switch
+        vlan openvswitch-switch unzip
     sed -i "s@'false'@'true'@" /etc/dbconfig-common/config
 
     # Remove the 4.6.0 kernel (it does not come with "aufs", which we'll need
@@ -107,6 +111,9 @@ net.ipv6.conf.eth1.disable_ipv6 = 1
 # Disable filtering
 net.ipv4.conf.all.rp_filter = 0
 net.ipv4.conf.default.rp_filter = 0
+
+# Enable IP forwarding
+net.ipv4.ip_forward = 1
 EOF
     sysctl -p
 
@@ -130,7 +137,7 @@ iface lo inet loopback
 
 # =================================
 
-# Provider/Physical network.
+# Provider/Physical network - 1 (eth1).
 allow-ovs br-physical
 iface br-physical inet static
 	address 10.0.4.${ipnr}
@@ -139,32 +146,60 @@ iface br-physical inet static
 	broadcast 10.0.255.255
 	gateway 10.0.0.254
 	dns-nameservers 10.0.0.254
- 
+
 auto eth1
 iface eth1 inet manual
-	up ifconfig $IFACE 0.0.0.0 up
-	up ip link set $IFACE promisc on
-	down ip link set $IFACE promisc off
-	down ifconfig $IFACE down
+	up ifconfig \$IFACE 0.0.0.0 up
+	up ip link set \$IFACE promisc on
+	up ethtool -K \$IFACE gro off
+	down ip link set \$IFACE promisc off
+	down ifconfig \$IFACE down
+
+# =================================
+
+# Provider/Physical network - 2 (eth0).
+allow-ovs br-infra
+iface br-infra inet static
+	address 10.0.3.${ipnr}
+	netmask 255.255.0.0
+	network 10.0.3.0
+	broadcast 10.0.255.255
+	gateway 10.0.0.254
+	dns-nameservers 10.0.0.254
+
+auto eth0
+iface eth0 inet manual
+	up ifconfig \$IFACE 0.0.0.0 up
+	up ip link set \$IFACE promisc on
+	up ethtool -K \$IFACE gro off
+	down ip link set \$IFACE promisc off
+	down ifconfig \$IFACE down
 EOF
 
+    # Setup and start the bridge interface.
+    ifdown eth1 || ifconfig eth1 down
     ovs-vsctl init
     ovs-vsctl list-br | \
         while read br; do
 	    ovs-vsctl del-br "${br}"
     done
     ovs-vsctl add-br br-physical
+    ovs-vsctl add-br br-infra
     ovs-vsctl add-port br-physical eth1
-    ifdown eth1 ; ifup eth1 ; ifup br-physical
+    ovs-vsctl add-port br-infra eth0
+    ifup eth1
+    ifup eth0
+    /etc/init.d/openvswitch-switch restart
 
-    # Get the Openstack RC file. Going to need that both in the testing of
-    # Keystone as well as local Openstack configuration further down.
-    curl -s http://${LOCALSERVER}/PXEBoot/admin-openrc > /root/admin-openrc
-    . /root/admin-openrc
+    # Install a "upgrade" script.
+    curl -s http://${LOCALSERVER}/PXEBoot/upgrade_system.sh > \
+        /usr/local/sbin/upgrade_system.sh
+    chmod +x /usr/local/sbin/upgrade_system.sh
+    ln -s /usr/local/sbin/upgrade_system.sh /etc/cron.daily/
 fi
 
-# Always need NTP!
-do_install ntp ntpdate
+# Always need NTP and some basic debug tools!
+do_install ntp ntpdate strace
 
 nr="$(echo "${hostname}" | \
     sed -e 's@.*blade[A-Z]@@i' -e 's@^0@@' -e 's@[a-z]$@@')"
@@ -199,12 +234,27 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
                 > "/etc/dbconfig-common/${app}.conf"
     done
 
+    # Prepare for installing ceilometer on the Compute.
+    # We need to forward traffic to localhost:27017 to 10.0.4.1:27017
+    # because that's where the RabbitMQ server is running.
+#    sysctl -w net.ipv4.conf.all.route_localnet=1
+#    iptables -t nat -A OUTPUT -m addrtype --src-type LOCAL --dst-type LOCAL -p tcp --dport 27017 -j DNAT --to-destination 10.0.4.1
+#    iptables -t nat -A POSTROUTING -m addrtype --src-type LOCAL --dst-type UNICAST -j MASQUERADE
+
     # Install the Compute packages.
     # nova-compute-ironic : Conflicts: nova-compute-kvm but 2:13.0.0-4 is to be installed
     # nova-compute-kvm : Conflicts: nova-compute-ironic but 2:13.0.0-4 is to be installed
-    do_install nova-compute-kvm nova-console nova-consoleproxy magnum-conductor \
-        fping ovmf neutron-openvswitch-agent neutron-lbaas-agent designate-agent \
-        neutron-l3-agent neutron-vpnaas-agent
+    do_install nova-compute-kvm nova-console nova-consoleproxy \
+        magnum-conductor fping ovmf neutron-openvswitch-agent \
+        designate-agent ceilometer-agent-compute
+        # NOTE: !! Apparently, L3, LBaaS, VPNaaS and FWaaS agents !!
+        #       !! should not run on the Compute                  !!
+        #neutron-lbaas-agent neutron-l3-agent neutron-vpnaas-agent
+
+    # Remove the portforwarding hack
+#    iptables -t nat -D OUTPUT -m addrtype --src-type LOCAL --dst-type LOCAL -p tcp --dport 27017 -j DNAT --to-destination 10.0.4.1
+#    iptables -t nat -D POSTROUTING -m addrtype --src-type LOCAL --dst-type UNICAST -j MASQUERADE
+#    sysctl -w net.ipv4.conf.all.route_localnet=0
 
     # ======================================================================
 
@@ -244,7 +294,8 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     sed -i "s@^bind-address[ \t].*@bind-address\t= 0.0.0.0@" "${cfg}"
     sed -i "s@^#max_connections[ \t].*@max_connections\t=5000@" "${cfg}"
     echo "SET GLOBAL max_connections = 5000;" | \
-        mysql -uroot -psecret11 -hlocalhost mysql
+        mysql -uroot -p$(get_debconf_value "keystone" "mysql/admin-pass") \
+              -hlocalhost mysql
     /etc/init.d/mysql restart
 
     # ======================================================================
@@ -301,6 +352,8 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     # Just double check - if we can't retrieve the user list, exit here,
     # no point in continuing installing on a broken system (if Keystone
     # isn't working, nothing will).
+    echo "Sleeping 30 seconds to give Keystone time to start."
+    sleep 30 # Wait half a minute for keystone to come up.
     openstack user list | grep -q admin || exit 1
 
     # ======================================================================
@@ -310,69 +363,36 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
 
     # ======================================================================
 
-    # Setup a API package list variable.
-    APIs=""
-    for api in barbican-api ceilometer-api cinder-api designate-api \
-        heat-api ironic-api ironic-conductor manila-api mistral-api \
-        murano-api senlin-api nova-api nova-conductor magnum-api \
-        magnum-conductor
-    do
-        APIs="${APIs} ${api} "
-    done
-
-    # Setup Engine/Server package list variable.
-    ENGINEs=""
-    for engine in heat-engine mistral-engine murano-engine senlin-engine \
-        neutron-server zaqar-server
-    do
-        ENGINEs="${ENGINEs} ${engine} "
-    done
-
-    # Setup Schedulers package list variable.
-    SCHEDULERs=""
-    for scheduler in cinder-scheduler manila-scheduler nova-scheduler
-    do
-        SCHEDULERs="${SCHEDULERs} ${scheduler} "
-    done
-
-    # Setup Agents package list variable.
-    # TODO: ?? Should this be done on the Controller or Compute ??.
-    AGENTs=""
-    for agent in ceilometer-agent-compute ceilometer-agent-ipmi \
-        ceilometer-agent-notification ceilometer-agent-central \
-        designate-agent neutron-dhcp-agent neutron-metering-agent \
-        neutron-l3-agent neutron-lbaas-agent neutron-vpnaas-agent
-    do
-        AGENTs="${AGENTs} ${agent}"
-    done
-
-    # Setup Open vSwitch packages.
-    OPENvSWITCHs=""
-    for pkg in openvswitch-switch neutron-openvswitch-agent \
-        neutron-plugin-openvswitch-agent 
-    do
-        OPENvSWITCHs="${OPENvSWITCHs} ${pkg}"
-    done
+    # Package variables.
+    BARBICAN="barbican-api barbican-keystone-listener barbican-worker "
+    CEILOMETER="ceilometer-api ceilometer-agent-ipmi ceilometer-agent-notification ceilometer-agent-central ceilometer-alarm-notifier ceilometer-collector"
+    CINDER="cinder-api cinder-scheduler cinder-backup cinder-volume "
+    DESIGNATE="designate-api designate-agent designate designate-central designate-mdns designate-pool-manager designate-sink designate-zone-manager"
+#    FUEL="fuel-agent fuel-ha-utils fuel-migrate fuel-misc fuel-nailgun-agent fuel-notify fuel-rabbit-fence fuel-umm fuel-web-apache"
+    GLANCE="glance glance-glare"
+    HEAT="heat-api heat-engine "
+    IRONIC="ironic-api ironic-conductor ironic-fa-deploy ironic-inspector"
+    MAGNUM="magnum-api magnum-conductor"
+    MANILA="manila-api manila-scheduler manila-share"
+    MISTRAL="mistral-api mistral-engine mistral-executor"
+    MURANO="murano-api murano-engine"
+    NEUTRON="neutron-server neutron-dhcp-agent neutron-metering-agent neutron-l3-agent neutron-lbaas-agent neutron-vpnaas-agent neutron-openvswitch-agent neutron-plugin-openvswitch-agent" # neutron-fwaas-agent
+    NOVA="nova-api nova-conductor nova-scheduler nova-volume"
+    SENLIN="senlin-api senlin-engine "
+    SWIFT="swift-account swift-container swift-object swift-plugin-s3 swift-proxy"
+    if [ "${ipnr}" = "1" ]; then
+        # => only on one of the storage nodes.
+        SWIFT="${SWIFT} swift-object-expirer"
+    fi
+    TROVE="trove-api trove-guestagent trove-conductor trove-taskmanager"
+    ZAQAR="zaqar-server"
 
     # Install Openstack services.
-    # TODO: !! Isn't completely packaged yet !!
-    # fuel-agent fuel-ha-utils fuel-library fuel-migrate fuel-misc \
-    # fuel-nailgun-agent fuel-notify fuel-rabbit-fence fuel-umm \
-    # fuel-web-apache
-    #
-    # TODO: !! MySQL errors !!
-    # trove-api trove-guestagent trove-conductor trove-taskmanager 
-    #
-    # TODO: !! As soon as it's released !!
-    # neutron-fwaas???
-    do_install "${APIs}" "${ENGINEs}" "${SCHEDULERs}" "${AGENTs}" \
-        "${OPENvSWITCHs}" barbican-keystone-listener barbican-worker \
-        ceilometer-alarm-notifier ceilometer-collector cinder-backup \
-        cinder-volume designate designate-central designate-mdns \
-        designate-pool-manager designate-sink designate-zone-manager \
-        glance glance-glare ironic-fa-deploy \
-        ironic-inspector manila-share mistral-executor nova-volume \
-        haproxy nfs-kernel-server
+    # TODO: !! Isn't completely packaged yet: "${FUEL}" !! 
+    do_install "${BARBICAN}" "${CEILOMETER}" "${CINDER}" "${DESIGNATE}" \
+        "${FUEL}" "${GLANCE}" "${HEAT}" "${IRONIC}" "${MAGNUM}" "${MANILA}" \
+        "${MISTRAL}" "${MURANO}" "${NEUTRON}" "${NOVA}" "${SENLIN}" \
+        "${SWIFT}" "${TROVE}" "${ZAQAR}" haproxy nfs-kernel-server rsync
 
     # ======================================================================
 
@@ -404,7 +424,7 @@ debconf-get-selections | \
 egrep '^dbc_dbpass|^dbc_dbadmpass' /etc/dbconfig-common/* | \
     sed 's@:.*@@' | sort | uniq | \
     while read file; do
-	cat "${file}" | sed -e "s@^\(dbc_dbpass='\).*@\1'@" \
+        cat "${file}" | sed -e "s@^\(dbc_dbpass='\).*@\1'@" \
             -e "s@^\(dbc_dbadmpass='\).*@\1'@" > \
             "${file}.new"
         mv "${file}.new" "${file}"
