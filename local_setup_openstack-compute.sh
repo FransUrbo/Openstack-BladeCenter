@@ -19,32 +19,44 @@ if [ ! -e "/root/admin-openrc" ]; then
 else
     set +x # Disable showing commands this do (password especially).
     . /root/admin-openrc
+    if [ -z "${OS_AUTH_URL}" ]; then
+        echo "Something wrong with the admin-openrc!"
+        exit 1
+    fi
 fi
-
-curl -s http://${LOCALSERVER}/PXEBoot/openstack-configure > \
-    /usr/local/bin/openstack-configure
-chmod +x /usr/local/bin/openstack-configure
 
 set -xe
 
 # ======================================================================
 
-# Get IP of this host
-set -- $(/sbin/ifconfig "eth1" | grep ' inet ')
-ip="$(echo "${2}" | sed 's@.*:@@')"
+# Preseed debconf (again - the package install(s) zeros out many of
+# the passwords).
+curl -s http://${LOCALSERVER}/PXEBoot/debconf_openstack-compute.txt | \
+    sed "s@10\.0\.4\.3@${ip}@" | \
+    debconf-set-selections
 
-# Get the hostname. This is the simplest and fastest.
-hostname="$(cat /etc/hostname)"
+# Get the wrapper to set variables in config files
+curl -s http://${LOCALSERVER}/PXEBoot/openstack-configure > \
+    /usr/local/bin/openstack-configure
+chmod +x /usr/local/bin/openstack-configure
+
+# Get a wrapper script to restart everything.
+curl -s http://${LOCALSERVER}/PXEBoot/openstack-services > \
+    /etc/init.d/openstack-services
+chmod +x /etc/init.d/openstack-services
+
+# ======================================================================
 
 # Get some passwords we'll need to modify configuration with.
 neutron_pass="$(get_debconf_value "neutron-common" "/mysql/app-pass")"
 rabbit_pass="$(get_debconf_value "designate-common" "/rabbit_password")"
-admin_pass="$(get_debconf_value "keystone" "keystone/admin-password")"
+admin_pass="$(get_debconf_value "openstack" "keystone/admin-password")"
 nova_pass="$(get_debconf_value "nova-common" "/mysql/app-pass")"
 nova_api_pass="$(get_debconf_value "nova-api" "/mysql/app-pass")"
 magnum_pass="$(get_debconf_value "magnum-common" "/mysql/app-pass")"
+mongo_ceilodb_pass="$(get_debconf_value "openstack" "mongodb/db_password")"
 email="$(get_debconf_value "keystone" "/admin-email")"
-ctrlnode="$(get_debconf_value "keystone" "/remote/host")"
+ctrlnode="$(get_debconf_value "openstack" "/remote/host")"
 
 if [ -z "${neutron_pass}" -o -z "${rabbit_pass}" -o -z "${admin_pass}" \
     -o -z "${nova_pass}" -o -z "${nova_api_pass}" -o -z "${magnum_pass}" ]
@@ -78,7 +90,6 @@ else
 fi
 EOF
 
-exit 0
 # ======================================================================
 
 # Configure Designate
@@ -94,13 +105,16 @@ openstack-configure set /etc/designate/designate.conf network_api:neutron auth_u
 openstack-configure set /etc/designate/designate.conf network_api:neutron admin_tenant_name service
 openstack-configure set /etc/designate/designate.conf network_api:neutron auth_strategy keystone
 openstack-configure set /etc/designate/designate.conf service:api auth_strategy keystone
-for init in /etc/init.d/designate-*; do $init restart; done
 
 # Configure Neutron.
 cp /etc/neutron/neutron.conf /etc/neutron/neutron.conf.orig
 openstack-configure set /etc/neutron/neutron.conf DEFAULT default_availability_zones nova
 openstack-configure set /etc/neutron/neutron.conf DEFAULT availability_zone nova
 openstack-configure set /etc/neutron/neutron.conf DEFAULT core_plugin neutron.plugins.ml2.plugin.Ml2Plugin
+# TODO: Not sure how/where to enable this.
+#openstack-configure set /etc/neutron/neutron.conf DEFAULT metadata_proxy_socket \$state_path/metadata_proxy
+#openstack-configure set /etc/neutron/neutron.conf DEFAULT metadata_proxy_user neutron
+#openstack-configure set /etc/neutron/neutron.conf DEFAULT metadata_proxy_group neutron
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name europe-london
 openstack-configure set /etc/neutron/neutron.conf database connection \
     "$(get_debconf_value "openstack" "keystone/password/neutron")"
@@ -110,39 +124,43 @@ cp /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugins/ml2/ml2_conf.ini.o
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini securitygroup firewall_driver iptables_hybrid
 OLD="$(openstack-configure get /etc/neutron/plugins/ml2/ml2_conf.ini ml2 tenant_network_types)"
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 tenant_network_types "${OLD:+${OLD},}vlan,flat"
+openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks external,infrastructure
 
-cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
-openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth auth_url "http://${ctrlnode}:35357/v2.0"
-openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_user neutron
-openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_password \
-    "$(get_debconf_value "openstack" "keystone/password/neutron")"
-openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth region europe-london
-openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_tenant_name service
-openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers service_provider \
-    LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
-openstack-configure set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch
-#OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins)"
-#openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins \
-#    "${OLD:+${OLD},}neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2"
-
-cp /etc/neutron/lbaas_agent.ini /etc/neutron/lbaas_agent.ini.orig
-openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT device_driver \
-    neutron_lbaas.services.loadbalancer.drivers.haproxy.namespace_driver.HaproxyNSDriver
-openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT ovs_integration_bridge br-provider
-openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT interface_driver \
-    neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2
-#
+# TODO|NOTE: !! Apparently, L3, LBaaS, VPNaaS and FWaaS agents should not run on the Compute !!
 #cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
-#openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers \
-#    "LOADBALANCERV2:Octavia:neutron_lbaas.drivers.octavia.driver.OctaviaDriver:default"
-
-cp /etc/neutron/l3_agent.ini /etc/neutron/l3_agent.ini.orig
-openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-provider
-# TODO: Kevin Benton say this should be empty value!
-openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridge br-physical
-openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_workers 5
-openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_state_report_workers 5
-for init in /etc/init.d/neutron-*; do $init restart; done
+#openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth auth_url "http://${ctrlnode}:35357/v2.0"
+#openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_user neutron
+#openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_password \
+#    "$(get_debconf_value "openstack" "keystone/password/neutron")"
+#openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth region europe-london
+#openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_tenant_name service
+#openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers service_provider \
+#    LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
+#openstack-configure set /etc/neutron/neutron_lbaas.conf DEFAULT interface_driver openvswitch
+##OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins)"
+##openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins \
+##    "${OLD:+${OLD},}neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2"
+#
+#cp /etc/neutron/lbaas_agent.ini /etc/neutron/lbaas_agent.ini.orig
+#openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT device_driver \
+#    neutron_lbaas.services.loadbalancer.drivers.haproxy.namespace_driver.HaproxyNSDriver
+#openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT ovs_integration_bridge br-provider
+#openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT interface_driver \
+#    neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2
+##
+##cp /etc/neutron/neutron_lbaas.conf /etc/neutron/neutron_lbaas.conf.orig
+##openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers \
+##    "LOADBALANCERV2:Octavia:neutron_lbaas.drivers.octavia.driver.OctaviaDriver:default"
+#
+#cp /etc/neutron/l3_agent.ini /etc/neutron/l3_agent.ini.orig
+#openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-provider
+## TODO: Kevin Benton say this should be empty value!
+#openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridge br-physical
+#openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_workers 5
+#openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_state_report_workers 5
+## # TODO: Not sure how/where to enable this.
+##openstack-configure set /etc/neutron/l3_agent.ini DEFAULT metadata_port 9697
+#openstack-configure set /etc/neutron/l3_agent.ini DEFAULT enable_metadata_proxy false
 
 # Configure Nova.
 cp /etc/nova/nova.conf /etc/nova/nova.conf.orig
@@ -163,7 +181,6 @@ openstack-configure set /etc/nova/nova.conf DEFAULT instances_path \$state_path/
 openstack-configure set /etc/nova/nova.conf DEFAULT resume_guests_state_on_host_boot true
 openstack-configure set /etc/nova/nova.conf DEFAULT network_allocate_retries 5
 #openstack-configure set /etc/nova/nova.conf DEFAULT max_concurrent_live_migrations 5
-openstack-configure set /etc/nova/nova.conf DEFAULT metadata_cache_expiration 60
 openstack-configure set /etc/nova/nova.conf DEFAULT remove_unused_base_images false
 openstack-configure set /etc/nova/nova.conf DEFAULT cpu_allocation_ratio 8.0
 openstack-configure set /etc/nova/nova.conf DEFAULT ram_allocation_ratio 1.0
@@ -174,6 +191,15 @@ openstack-configure set /etc/nova/nova.conf DEFAULT console_driver nova.console.
 openstack-configure set /etc/nova/nova.conf DEFAULT console_public_hostname "${hostname}"
 openstack-configure set /etc/nova/nova.conf DEFAULT console_topic console
 openstack-configure set /etc/nova/nova.conf DEFAULT linuxnet_ovs_integration_bridge br-provider
+# TODO: Not sure how/where to enable this.
+#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_host \$my_ip
+#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_port 9697
+#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_cache_expiration 60
+#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_listen 0.0.0.0
+#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_listen_port 9697
+#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_workers 5
+#openstack-configure set /etc/nova/nova.conf DEFAULT use_forwarded_for true
+#openstack-configure set /etc/nova/nova.conf DEFAULT multi_host true
 openstack-configure set /etc/nova/nova.conf database connection "mysql+pymysql://nova:${nova_pass}@${ctrlnode}/nova"
 openstack-configure set /etc/nova/nova.conf api_database connection "mysql+pymysql://novaapi:${nova_api_pass}@${ctrlnode}/novaapi"
 openstack-configure set /etc/nova/nova.conf cinder cross_az_attach True
@@ -193,10 +219,11 @@ openstack-configure set /etc/nova/nova.conf keystone_authtoken admin_user nova
 openstack-configure set /etc/nova/nova.conf keystone_authtoken admin_password \
     "$(get_debconf_value "openstack" "keystone/password/nova")"
 openstack-configure set /etc/nova/nova.conf keystone_authtoken admin_tenant_name service
-openstack-configure set /etc/nova/nova.conf keystone_authtoken memcached_servers 127.0.0.1:11211
-#openstack-configure set /etc/nova/nova.conf neutron url "http://${ctrlnode}:9696/"
+openstack-configure set /etc/nova/nova.conf keystone_authtoken memcached_servers "${ctrlnode}:11211"
+openstack-configure set /etc/nova/nova.conf neutron url "http://${ctrlnode}:9696/"
 #openstack-configure set /etc/nova/nova.conf neutron auth_url "http://${ctrlnode}:5000/v3"
 #openstack-configure set /etc/nova/nova.conf neutron auth_type v3password
+openstack-configure set /etc/nova/nova.conf neutron service_metadata_proxy false
 openstack-configure set /etc/nova/nova.conf neutron username neutron
 openstack-configure set /etc/nova/nova.conf neutron password \
     "$(get_debconf_value "openstack" "keystone/password/neutron")"
@@ -226,7 +253,9 @@ openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_base_url http://${ip
 openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_port 6081
 ini_unset_value /etc/nova/nova.conf default_domain_name
 ini_unset_value /etc/nova/nova.conf domain_name
-for init in /etc/init.d/nova-*; do $init restart; done
+
+cp /etc/nova/nova-compute.conf /etc/nova/nova-compute.conf.orig
+openstack-configure set /etc/nova/nova-compute.conf DEFAULT neutron_ovs_bridge br-physical
 
 # ======================================================================
 # Setup Magnum.
@@ -234,13 +263,34 @@ cp /etc/magnum/magnum.conf /etc/magnum/magnum.conf.orig
 openstack-configure set /etc/magnum/magnum.conf database connection "mysql+pymysql://magnum:${magnum_pass}@${ctrlnode}/magnum"
 
 cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openvswitch_agent.ini.orig
-openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings external:br-physical
+openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings external:br-physical,infrastructure:br-infra
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs integration_bridge br-provider
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs tunnel_bridge br-tun
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local_ip "${ip}"
-for init in /etc/init.d/*openvswitch*; do $init restart; done
+
+# ======================================================================
+# Setup Ceilometer.
+cp /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.orig
+openstack-configure set /etc/ceilometer/ceilometer.conf DEFAULT rpc_backend rabbit
+openstack-configure set /etc/ceilometer/ceilometer.conf keystone_authtoken memcached_servers "${ctrlnode}:11211"
+openstack-configure set /etc/ceilometer/ceilometer.conf database connection "mongodb://ceilometer:${mongo_ceilodb_pass}${ctrlnode}:27017/ceilometer"
+# TODO: 2h?
+openstack-configure set /etc/ceilometer/ceilometer.conf database metering_time_to_live 7200
+openstack-configure set /etc/ceilometer/ceilometer.conf database event_time_to_live 7200
+
+# ======================================================================
+# Restart all changed servers
+/etc/init.d/openstack-services restart
 
 # ======================================================================
 # Setup Open iSCSI.
 iscsiadm -m iface -I eth1 --op=new
 iscsiadm -m iface -I eth1 --op=update -n iface.vlan_priority -v 1
+
+# ======================================================================
+# Save our config file state.
+find /etc -name '*.orig' | \
+    while read file; do
+	f="$(echo "${file}" | sed 's@\.orig@@')"
+        cp "${f}" "${f}.save"
+done
