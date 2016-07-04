@@ -24,9 +24,15 @@ pip install -e git+https://github.com/stackforge/nova-docker#egg=novadocker
 cd src/novadocker/
 echo "GIT $(git log | head -n1)"
 python setup.py install
+cd /root
 
 # Update Nova config
-openstack-configure set /etc/nova/nova-compute.conf DEFAULT compute_driver novadocker.virt.docker.DockerDriver
+cp /etc/nova/nova-compute.conf /etc/nova/nova-compute.conf.orig
+# TODO: "ERROR nova.virt.driver ImportError: No module named netconf"
+#openstack-configure set /etc/nova/nova-compute.conf DEFAULT compute_driver novadocker.virt.docker.DockerDriver
+openstack-configure set /etc/nova/nova-compute.conf DEFAULT compute_driver nova.virt.libvirt.LibvirtDriver
+openstack-configure set /etc/nova/nova-compute.conf DEFAULT use_virtio_for_bridges true
+
 mkdir -p /etc/nova/rootwrap.d
 cat <<EOF > /etc/nova/rootwrap.d/docker.filters
 # nova-rootwrap command filters for setting up network in the docker driver
@@ -37,15 +43,8 @@ cat <<EOF > /etc/nova/rootwrap.d/docker.filters
 # nova/virt/docker/driver.py: 'ln', '-sf', '/var/run/netns/.*'
 ln: CommandFilter, /bin/ln, root
 EOF
+
 cat <<EOF >> /etc/nova/nova-compute.conf
-# ?? Duplicate ??
-#[libvirt]
-#compute_driver = nova.virt.libvirt.LibvirtDriver
-#virt_type = kvm
-#vif_driver = nova.virt.libvirt.vif.LibvirtGenericVIFDriver
-#use_virtio_for_bridges = true
-## The cpu_mode option can take one of the following values: none, host-passthrough, host-model, and custom.
-##cpu_mode = host-passthrough
 #images_volume_group = <local_lvm_group>
 
 # Nova Docker driver
