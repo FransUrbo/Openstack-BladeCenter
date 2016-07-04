@@ -1,7 +1,5 @@
 #!/bin/sh
 
-set -xe
-
 # Import a bunch of external images.
 # http://docs.openstack.org/image-guide/obtain-images.html
 # http://docs.openstack.org/cli-reference/glance.html
@@ -12,9 +10,13 @@ if [ ! -e "/root/admin-openrc" ]; then
 else
     set +x
     . /root/admin-openrc
+    if [ -z "${OS_AUTH_URL}" ]; then
+        echo "Something wrong with the admin-openrc!"
+        exit 1
+    fi
 fi
 
-set -x
+set -ex
 
 GENERAL_OPTS="--public --protected
 --project admin
@@ -182,4 +184,13 @@ if [ ! -e "debian-8.5.0-openstack-amd64.qcow2" ]; then
         --property os_command_line='/usr/sbin/sshd -D' \
         --property os_distro=debian --property os_version=8 \
         --file debian-8.5.0-openstack-amd64.qcow2 jessie
+fi
+
+if [ ! -e "mysql.qcow2" ]; then
+    #wget http://tarballs.openstack.org/trove/images/ubuntu/mysql.qcow2
+    wget http://${LOCALSERVER}/PXEBoot/Images/mysql.qcow2
+#    openstack image create ${GENERAL_OPTS} --min-disk 3 \
+#        --property os_command_line='/usr/sbin/sshd -D' \
+#        --property os_distro=debian --property os_version=8 \
+#        --file mysql.qcow2 trove-mysql
 fi
