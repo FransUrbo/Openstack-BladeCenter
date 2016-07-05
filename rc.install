@@ -245,8 +245,8 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     # nova-compute-ironic : Conflicts: nova-compute-kvm but 2:13.0.0-4 is to be installed
     # nova-compute-kvm : Conflicts: nova-compute-ironic but 2:13.0.0-4 is to be installed
     do_install nova-compute-kvm nova-console nova-consoleproxy \
-        magnum-conductor fping ovmf neutron-openvswitch-agent \
-        designate-agent ceilometer-agent-compute
+        magnum-conductor fping ovmf designate-agent ceilometer-agent-compute \
+        neutron-openvswitch-agent 
         # NOTE: !! Apparently, L3, LBaaS, VPNaaS and FWaaS agents !!
         #       !! should not run on the Compute                  !!
         #neutron-lbaas-agent neutron-l3-agent neutron-vpnaas-agent
@@ -291,8 +291,10 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     [ "${SQLDB}" = "mysql" ] && \
         cfg="/etc/mysql/mysql.conf.d/mysqld.cnf" || \
         cfg="/etc/mysql/mariadb.conf.d/50-server.cnf"
-    sed -i "s@^bind-address[ \t].*@bind-address\t= 0.0.0.0@" "${cfg}"
-    sed -i "s@^#max_connections[ \t].*@max_connections\t=5000@" "${cfg}"
+    sed -i "s@^\(bind-address[ \t]=\).*@\1 0.0.0.0@" "${cfg}"
+    sed -i "s@^#\(max_connections[ \t]=\).*@\1 5000@" "${cfg}"
+    sed -i "s@^#\(server-id[ \t]=\).*@\1 ${ipnr}@" "${cfg}"
+    sed -i "s@^#\(log_bin[ \t].*\)@\1@" "${cfg}"
     echo "SET GLOBAL max_connections = 5000;" | \
         mysql -uroot -p$(get_debconf_value "keystone" "mysql/admin-pass") \
               -hlocalhost mysql
@@ -344,8 +346,9 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
 
     # Install Openstack Authentication server and the 'openstack' script
     # as well as the dashboard.
+    # TODO: Still having problem with the provided Horizon in Debian GNU/Linux.
     do_install keystone python-keystone python-openstackclient cryptsetup \
-        python-django-horizon=2:9.0.0-3 openstack-dashboard \
+        python-django-horizon=2:9.0.0-3 openstack-dashboard=2:9.0.0-3 \
         openstack-dashboard-apache 
 
     # Just double check - if we can't retrieve the user list, exit here,
