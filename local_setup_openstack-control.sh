@@ -257,12 +257,15 @@ openstack-configure set /etc/nova/nova.conf DEFAULT multi_host true
 openstack-configure set /etc/nova/nova.conf barbican os_region_name europe-london
 openstack-configure set /etc/nova/nova.conf cinder cross_az_attach True
 openstack-configure set /etc/nova/nova.conf cinder os_region_name europe-london
+#openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
+#openstack-configure set /etc/nova/nova.conf keystone_authtoken identity_uri "http://${ctrlnode}:35357/v3"
+openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_host "${ctrlnode}"
+openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_version 3
+openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_port 35357
+openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_protocol http
 openstack-configure set /etc/nova/nova.conf keystone_authtoken http_connect_timeout 5
 openstack-configure set /etc/nova/nova.conf keystone_authtoken http_request_max_retries 3
 openstack-configure set /etc/nova/nova.conf keystone_authtoken region_name europe-london
-openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_port 35357
-openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_protocol http
-openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_host "${ctrlnode}"
 openstack-configure set /etc/nova/nova.conf neutron url "http://${ctrlnode}:9696/"
 openstack-configure set /etc/nova/nova.conf neutron username neutron
 openstack-configure set /etc/nova/nova.conf neutron password \
@@ -275,11 +278,6 @@ openstack-configure set /etc/nova/nova.conf neutron project_name service
 openstack-configure set /etc/nova/nova.conf neutron user_domain_name default
 openstack-configure set /etc/nova/nova.conf neutron ovs_bridge br-provider
 openstack-configure set /etc/nova/nova.conf neutron tenant_name service
-#openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
-#openstack-configure set /etc/nova/nova.conf keystone_authtoken identity_uri "http://${ctrlnode}:35357/v3"
-openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_host "${ctrlnode}"
-openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_version 3
-openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_protocol http
 openstack-configure set /etc/nova/nova.conf ironic api_endpoint "http://${ctrlnode}:6385/v1"
 openstack-configure set /etc/nova/nova.conf ironic admin_username ironic
 openstack-configure set /etc/nova/nova.conf ironic admin_password \
@@ -287,10 +285,6 @@ openstack-configure set /etc/nova/nova.conf ironic admin_password \
 openstack-configure set /etc/nova/nova.conf ironic admin_tenant_name service
 openstack-configure set /etc/nova/nova.conf glance api_servers "http://${ctrlnode}:9292/"
 openstack-configure set /etc/nova/nova.conf glance num_retries 5
-ini_unset_value /etc/nova/nova.conf user_domain_id
-ini_unset_value /etc/nova/nova.conf user_domain_name
-ini_unset_value /etc/nova/nova.conf auth_host
-ini_unset_value /etc/nova/nova.conf auth_protocol
 
 # Configure Zaqar.
 cp /etc/zaqar/zaqar.conf /etc/zaqar/zaqar.conf.orig
@@ -344,8 +338,8 @@ openstack-configure set /etc/cinder/cinder.conf oslo_messaging_notifications dri
 openstack-configure set /etc/cinder/cinder.conf keystone_authtoken memcached_servers "${ctrlnode}:11211"
 openstack-configure set /etc/cinder/cinder.conf lvm volume_group blade_center
 #TODO: ?? Enable this ??
-#echo "*/5 * * * *	/usr/bin/cinder-volume-usage-audit --send_actions" > \
-#    /etc/cron.d/cinder-volume-usage-audit
+echo "#*/5 * * * *	/usr/bin/cinder-volume-usage-audit --send_actions" > \
+    /etc/cron.d/cinder-volume-usage-audit
 
 # ======================================================================
 # Configure Glance.
@@ -518,8 +512,6 @@ openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT ovs_integration_brid
 cp /etc/neutron/l3_agent.ini /etc/neutron/l3_agent.ini.orig
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_workers 5
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT rpc_state_report_workers 5
-# TODO: Kevin Benton say this should be empty value!
-#openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridge br-physical
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridge ""
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-provider
 
@@ -809,10 +801,159 @@ set -- $(neutron port-list -c id -c fixed_ips | grep -w 192.168.96.1)
 if [ -e "/dev/sdb" ]; then
     dmsetup remove_all -f
     dd if=/dev/zero of=/dev/sdb bs=512 count=1
-    pvcreate -ff /dev/sdb
+    pvcreate -ff -y /dev/sdb
     for init in /etc/init.d/lvm2*; do $init start; done
     vgcreate blade_center /dev/sdb
 fi
+
+# ======================================================================
+# Recreate the flavors (with new ones) - the default ones isn't perfect.
+
+# Delete all the old ones.
+openstack flavor list -f csv --quote none | \
+    grep -v 'ID' | \
+    while read line; do
+	set -- $(echo "${line}" | sed 's@,@ @g')
+	# name=2, mem=3, disk=4, vcpus=6
+        openstack flavor delete "${2}"
+    done
+
+# Create the new flavors.
+openstack flavor create --ram   512 --disk  2 --vcpus 1 --disk  5 m1.1nano
+openstack flavor create --ram  1024 --disk 10 --vcpus 1 --disk  5 m1.2tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 1 --disk 10 m1.3small
+openstack flavor create --ram  4096 --disk 40 --vcpus 1 m1.4medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 1 m1.5large
+openstack flavor create --ram 16384 --disk 40 --vcpus 1 m1.6xlarge
+
+openstack flavor create --ram  1024 --disk 10 --vcpus 2 --disk 5 m2.1tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 2 m2.2small
+openstack flavor create --ram  4096 --disk 40 --vcpus 2 m2.3medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 2 m2.4large
+openstack flavor create --ram 16384 --disk 40 --vcpus 2 m2.5xlarge
+
+openstack flavor create --ram  1024 --disk 20 --vcpus 3 --disk  5 m3.1tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 3 --disk 10 m3.2small
+openstack flavor create --ram  4096 --disk 40 --vcpus 3 m3.3medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 3 m3.4large
+openstack flavor create --ram 16384 --disk 40 --vcpus 3 m3.5xlarge
+
+openstack flavor create --ram  1024 --disk 10 --vcpus 4 --disk  5 m4.1tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 4 --disk 10 m4.2small
+openstack flavor create --ram  4096 --disk 40 --vcpus 4 m4.3medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 4 m4.4large
+openstack flavor create --ram 16384 --disk 40 --vcpus 4 m4.5xlarge
+
+# ======================================================================
+
+# Create new security groups.
+clean_security_group() {
+    neutron security-group-rule-list -f csv -c id -c security_group | \
+        grep "\"${1}\"" | \
+        sed -e 's@"@@g' -e 's@,.*@@' | \
+        while read grp; do
+	    neutron security-group-rule-delete "${grp}"
+	done
+}
+
+# Modify the default security group to allow everything.
+clean_security_group default
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 1 \
+    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 default
+neutron security-group-rule-create --direction ingress --protocol udp --port-range-min 1 \
+    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 default
+neutron security-group-rule-create --direction egress  --protocol tcp --port-range-min 1 \
+    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 default
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 1 \
+    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 default
+neutron security-group-rule-create --direction ingress --protocol icmp --remote-ip-prefix \
+    0.0.0.0/0 default
+neutron security-group-rule-create --direction egress  --protocol icmp --remote-ip-prefix \
+    0.0.0.0/0 default
+
+openstack security group create --description "Allow incoming SSH connections." ssh
+clean_security_group ssh
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 22 \
+    --port-range-max 22 --remote-ip-prefix 0.0.0.0/0 ssh
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 22 \
+    --port-range-max 22 --remote-ip-prefix 0.0.0.0/0 ssh
+
+openstack security group create --description "Allow incoming HTTP/HTTPS connections." web
+clean_security_group web
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min  80 \
+    --port-range-max 80 --remote-ip-prefix 0.0.0.0/0 web
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 443 \
+    --port-range-max 443 --remote-ip-prefix 0.0.0.0/0 web
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min  80 \
+    --port-range-max 80 --remote-ip-prefix 0.0.0.0/0 web
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 443 \
+    --port-range-max 443 --remote-ip-prefix 0.0.0.0/0 web
+
+openstack security group create --description "Allow incoming DNS connections." dns
+clean_security_group dns
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 53 \
+    --port-range-max 53 --remote-ip-prefix 0.0.0.0/0 dns
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 53 \
+    --port-range-max 53 --remote-ip-prefix 0.0.0.0/0 dns
+
+openstack security group create --description "Allow incoming LDAP/LDAPS connections." ldap
+clean_security_group ldap
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 389 \
+    --port-range-max 389 --remote-ip-prefix 0.0.0.0/0 ldap
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 636 \
+    --port-range-max 636 --remote-ip-prefix 0.0.0.0/0 ldap
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 389 \
+    --port-range-max 389 --remote-ip-prefix 0.0.0.0/0 ldap
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 636 \
+    --port-range-max 636 --remote-ip-prefix 0.0.0.0/0 ldap
+
+openstack security group create --description "Allow incoming MySQL connections." mysql
+clean_security_group mysql
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 3306 \
+    --port-range-max 3306 --remote-ip-prefix 0.0.0.0/0 mysql
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 3306 \
+    --port-range-max 3306 --remote-ip-prefix 0.0.0.0/0 mysql
+
+openstack security group create --description "Allow incoming PostgreSQL connections." psql
+clean_security_group psql
+neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 5432 \
+    --port-range-max 5432 --remote-ip-prefix 0.0.0.0/0 psql
+neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 5432 \
+    --port-range-max 5432 --remote-ip-prefix 0.0.0.0/0 psql
+
+openstack security group create --description "Allow incoming/outgoing ICMP connections." icmp
+clean_security_group icmp
+neutron security-group-rule-create --direction ingress --protocol icmp --remote-ip-prefix \
+    0.0.0.0/0 icmp
+neutron security-group-rule-create --direction egress  --protocol icmp --remote-ip-prefix \
+    0.0.0.0/0 icmp
+
+# ======================================================================
+# Create some key pairs.
+curl -s http://${LOCALSERVER}/PXEBoot/id_rsa.pub > /var/tmp/id_rsa.pub
+openstack keypair create --public-key /var/tmp/id_rsa.pub "Turbo Fredriksson"
+rm /var/tmp/id_rsa.pub
+
+# ======================================================================
+# Update the default quota.
+openstack quota set --key-pairs 2 --fixed-ips 2 --floating-ips 2 \
+    --volumes 10 --snapshots 10 --ram 512 --injected-files 10 \
+    --gigabytes 100 --secgroups 20 --secgroup-rules 5 default
+
+# ======================================================================
+# Create some host aggregates. Might be nice to have. Eventually.
+openstack aggregate create --zone nova infra
+openstack aggregate create --zone nova devel
+openstack aggregate create --zone nova build
+openstack aggregate create --zone nova tests
+
+# ======================================================================
+# Create a bunch (20) of floating IPs.
+i=0
+while [ "${i}" -le 19 ]; do
+    openstack ip floating create physical
+    i="$(expr "${i}" + 1)"
+done
 
 # ======================================================================
 # Setup Cinder-NFS.
@@ -886,23 +1027,13 @@ EOF
 #       take a while!
 curl -s http://${LOCALSERVER}/PXEBoot/install_images.sh > \
     /var/tmp/install_images.sh
-nohup sh -x /var/tmp/install_images.sh >> \
-    /var/tmp/rc.install.log 2>&1 &
-
-# ======================================================================
-# Install the part that can only run when we have a Compute node available.
-# NOTE: Also run this with nohup in the background (basically making it a
-#       daemon) because we never know when the first Compute will come up..
-curl -s http://${LOCALSERVER}/PXEBoot/local_setup_openstack-postcompute.sh > \
-    /var/tmp/local_setup_openstack-postcompute.sh
-chmod +x /var/tmp/local_setup_openstack-postcompute.sh
-nohup /var/tmp/local_setup_openstack-postcompute.sh >> \
-    /var/tmp/rc.install.log 2>&1 &
+nohup sh -x /var/tmp/install_images.sh > \
+    /var/tmp/install_images.log 2>&1 &
 
 # ======================================================================
 # TODO: Disable some services that don't work at the moment.
 for service in trove-guestagent trove-taskmanager designate-pool-manager \
-    designate-central
+    designate-central cinder-volume manila-share
 do
     /etc/init.d/${service} stop
     chmod -x /etc/init.d/${service}
@@ -915,3 +1046,5 @@ find /etc -name '*.orig' | \
 	f="$(echo "${file}" | sed 's@\.orig@@')"
         cp "${f}" "${f}.save"
 done
+
+echo "=> W E ' R E   A L L   D O N E : $(date) <="
