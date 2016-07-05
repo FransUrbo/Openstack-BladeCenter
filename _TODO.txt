@@ -24,3 +24,4 @@
   http://docs.openstack.org/icehouse/install-guide/install/yum/content/trove-verify.html
 * Verify Celiometer (Telemetry)
   http://docs.openstack.org/icehouse/install-guide/install/yum/content/ceilometer-verify.html
+* Finish setting up LBaaS
