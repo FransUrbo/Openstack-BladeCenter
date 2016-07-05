@@ -439,7 +439,7 @@ openstack-configure set /etc/glance/glance-scrubber.conf DEFAULT metadata_encryp
     "$(get_debconf_value "openstack" "glance/metadata_encryption_key")"
 openstack-configure set /etc/glance/glance-scrubber.conf DEFAULT daemon true
 openstack-configure set /etc/glance/glance-scrubber.conf DEFAULT registry_host "${ip}"
-openstack-configure set /etc/glance/glance-scrubber.conf database "mysql+pymysql://glance:${glance_pass}@${ctrlnode}/glance"
+openstack-configure set /etc/glance/glance-scrubber.conf database connection "mysql+pymysql://glance:${glance_pass}@${ctrlnode}/glance"
 openstack-configure set /etc/glance/glance-scrubber.conf database use_db_reconnect true
 
 # Configure Barbican.
@@ -483,6 +483,7 @@ OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins
 openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins \
     "${OLD:+${OLD},}neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2"
 openstack-configure set /etc/neutron/neutron.conf DEFAULT dns_domain openstack.domain.tld
+openstack-configure set /etc/neutron/neutron.conf DEFAULT agent_down_time 120
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken auth_host openstack.domain.tld
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken auth_port 35357
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken http_connect_timeout 5
@@ -499,6 +500,7 @@ openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name
 openstack-configure set /etc/neutron/neutron.conf oslo_messaging_notifications driver \
     neutron.services.metering.drivers.iptables.iptables_driver.IptablesMeteringDriver
 openstack-configure set /etc/neutron/neutron.conf agent availability_zone nova
+openstack-configure set /etc/neutron/neutron.conf agent report_interval 60
 openstack-configure set /etc/neutron/neutron.conf database use_db_reconnect true
 
 cp /etc/neutron/dhcp_agent.ini /etc/neutron/dhcp_agent.ini.orig
@@ -522,6 +524,10 @@ openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT ovs_integration_bri
 openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT interface_driver \
     neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2
 
+cp /etc/neutron/services_lbaas.conf /etc/neutron/services_lbaas.conf.orig
+openstack-configure set /etc/neutron/services_lbaas.conf haproxy interface_driver neutron.agent.linux.interface.OVSInterfaceDriver
+
+# TODO: !! Until the package come with this file, we use "cat" below to create it instead !!
 #cp /etc/neutron/metadata_agent.ini /etc/neutron/metadata_agent.ini.orig
 #openstack-config --set /etc/neutron/metadata_agent.ini DEFAULT auth_url http://${ip}:5000/v2.0
 #openstack-config --set /etc/neutron/metadata_agent.ini DEFAULT auth_region europe-london
@@ -533,13 +539,20 @@ openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT interface_driver \
 #    "$(get_debconf_value "neutron-metadata-agent" "neutron-metadata/metadata_secret")"
 cat <<EOF > /etc/neutron/metadata_agent.ini
 [DEFAULT]
-auth_url = http://${ip}:5000/v2.0
+#auth_url = http://${ctrlnode}:5000/v3
+auth_host = ${ctrlnode}
+auth_port = 35357
+auth_protocol = http
 auth_region = europe-london
+
 admin_tenant_name = service
 admin_user = neutron
 admin_password = ${neutron_pass}
+
 nova_metadata_ip = ${ip}
+
 metadata_proxy_shared_secret $(get_debconf_value "neutron-metadata-agent" "neutron-metadata/metadata_secret")
+
 verbose = True
 EOF
 
@@ -1027,6 +1040,7 @@ EOF
 #       take a while!
 curl -s http://${LOCALSERVER}/PXEBoot/install_images.sh > \
     /var/tmp/install_images.sh
+echo "Running /var/tmp/install_images.sh in the background."
 nohup sh -x /var/tmp/install_images.sh > \
     /var/tmp/install_images.log 2>&1 &
 
