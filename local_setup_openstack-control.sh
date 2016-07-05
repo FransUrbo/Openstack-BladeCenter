@@ -480,8 +480,10 @@ openstack-configure set /etc/neutron/neutron.conf DEFAULT metadata_proxy_shared_
 OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins)"
 # NOTE: Using "lbaasv2" gives "Plugin 'lbaasv2' not found".
 # TODO: !! Install and enable FWaaS and VPNaaS as soon as they're available: ,fwaas,vpnaas !!
+# TODO: !! Get LBaaSv2 working !!
 openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins \
-    "${OLD:+${OLD},}neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2"
+    "${OLD:+${OLD},}lbaas"
+#    "${OLD:+${OLD},}neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2"
 openstack-configure set /etc/neutron/neutron.conf DEFAULT dns_domain openstack.domain.tld
 openstack-configure set /etc/neutron/neutron.conf DEFAULT agent_down_time 120
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken auth_host openstack.domain.tld
@@ -518,11 +520,14 @@ openstack-configure set /etc/neutron/l3_agent.ini DEFAULT external_network_bridg
 openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge br-provider
 
 cp /etc/neutron/lbaas_agent.ini /etc/neutron/lbaas_agent.ini.orig
+# TODO: !! Get LBaaSv2 working !!
 openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT device_driver \
-    neutron_lbaas.services.loadbalancer.drivers.haproxy.namespace_driver.HaproxyNSDriver
+    neutron.services.loadbalancer.drivers.haproxy.namespace_driver.HaproxyNSDriver
+#    neutron_lbaas.services.loadbalancer.drivers.haproxy.namespace_driver.HaproxyNSDriver
 openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT ovs_integration_bridge br-provider
 openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT interface_driver \
-    neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2
+    neutron.agent.linux.interface.OVSInterfaceDriver
+openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT haproxy user_group haproxy
 
 cp /etc/neutron/services_lbaas.conf /etc/neutron/services_lbaas.conf.orig
 openstack-configure set /etc/neutron/services_lbaas.conf haproxy interface_driver neutron.agent.linux.interface.OVSInterfaceDriver
@@ -579,8 +584,10 @@ openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_user 
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_password "${neutron_pass}"
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth admin_tenant_name service
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_auth region europe-london
+# TODO: !! Get LBaaSv2 working !!
 openstack-configure set /etc/neutron/neutron_lbaas.conf service_providers service_provider \
-    LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
+    LOADBALANCER:Haproxy:neutron_lbaas.services.loadbalancer.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
+#    LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default
 
 # ======================================================================
 # Setup Ironic
