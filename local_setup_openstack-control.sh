@@ -816,6 +816,20 @@ neutron router-gateway-set --fixed-ip subnet_id=subnet-infrastructure,ip_address
 set -- $(neutron port-list -c id -c fixed_ips | grep -w 192.168.96.1)
 [ -n "${2}" ] && neutron port-update --name port-infrastructure "${2}"
 
+# ----------------------------------------------------------------------
+# Create a load balancer for each of the subnets.
+neutron lb-pool-create --lb-method LEAST_CONNECTIONS --name hapool-97 \
+    --protocol HTTP --subnet-id subnet-97 --provider haproxy
+neutron lb-pool-create --lb-method LEAST_CONNECTIONS --name hapool-98 \
+    --protocol HTTP --subnet-id subnet-98 --provider haproxy
+neutron lb-pool-create --lb-method LEAST_CONNECTIONS --name hapool-99 \
+    --protocol HTTP --subnet-id subnet-99 --provider haproxy
+
+# ----------------------------------------------------------------------
+# Create a load balancer monitor.
+neutron lb-healthmonitor-create --type PING --timeout 15 --delay 15 \
+    --max-retries 5
+
 # ======================================================================
 # Create a LVM on /dev/sdb.
 if [ -e "/dev/sdb" ]; then
