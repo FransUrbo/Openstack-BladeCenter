@@ -16,6 +16,8 @@ else
     fi
 fi
 
+echo "=> Starting install_images.sh: $(date) <="
+
 set -ex
 
 GENERAL_OPTS="--public --protected
@@ -194,3 +196,5 @@ if [ ! -e "mysql.qcow2" ]; then
 #        --property os_distro=debian --property os_version=8 \
 #        --file mysql.qcow2 trove-mysql
 fi
+
+echo "=> W E ' R E   A L L   D O N E : $(date) <="
