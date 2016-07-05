@@ -12,7 +12,7 @@ else
     fi
 fi
 
-set -xe
+#set -xe
 
 # ======================================================================
 # Remove the compute nodes no longer available.
