@@ -89,7 +89,7 @@ if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
 
     # Install the HP utilities, dbconfig and Openstack packaging tools.
     do_install hp-snmp-agents hponcfg dbconfig-mysql openstack-pkg-tools \
-        vlan openvswitch-switch unzip
+        vlan openvswitch-switch unzip libosinfo-bin
     sed -i "s@'false'@'true'@" /etc/dbconfig-common/config
 
     # Remove the 4.6.0 kernel (it does not come with "aufs", which we'll need
@@ -189,7 +189,10 @@ EOF
     ovs-vsctl add-port br-infra eth0
     ifup eth1
     ifup eth0
-    /etc/init.d/openvswitch-switch restart
+    set +e
+    /etc/init.d/openvswitch-switch stop
+    /etc/init.d/openvswitch-switch start
+    set -e
 
     # Install a "upgrade" script.
     curl -s http://${LOCALSERVER}/PXEBoot/upgrade_system.sh > \
