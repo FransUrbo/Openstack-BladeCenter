@@ -271,8 +271,6 @@ openstack-configure set /etc/nova/nova.conf neutron username neutron
 openstack-configure set /etc/nova/nova.conf neutron password \
     "$(get_debconf_value "openstack" "keystone/password/neutron")"
 openstack-configure set /etc/nova/nova.conf neutron region_name europe-london
-#openstack-configure set /etc/nova/nova.conf neutron domain_name default
-#openstack-configure set /etc/nova/nova.conf neutron default_domain_name default
 openstack-configure set /etc/nova/nova.conf neutron project_domain_name default
 openstack-configure set /etc/nova/nova.conf neutron project_name service
 openstack-configure set /etc/nova/nova.conf neutron user_domain_name default
@@ -285,6 +283,8 @@ openstack-configure set /etc/nova/nova.conf ironic admin_password \
 openstack-configure set /etc/nova/nova.conf ironic admin_tenant_name service
 openstack-configure set /etc/nova/nova.conf glance api_servers "http://${ctrlnode}:9292/"
 openstack-configure set /etc/nova/nova.conf glance num_retries 5
+ini_unset_value /etc/nova/nova.conf default_domain_name
+ini_unset_value /etc/nova/nova.conf domain_name
 
 # Configure Zaqar.
 cp /etc/zaqar/zaqar.conf /etc/zaqar/zaqar.conf.orig
@@ -499,11 +499,14 @@ openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name
 #openstack-configure set /etc/neutron/neutron.conf keystone_authtoken identity_uri "http://${ctrlnode}:35357/"
 #ini_unset_value /etc/neutron/neutron.conf auth_host
 #ini_unset_value /etc/neutron/neutron.conf auth_protocol
+openstack-configure set /etc/neutron/neutron.conf nova auth_url "http://${ctrlnode}:5000/v3"
+openstack-configure set /etc/neutron/neutron.conf nova project_name service
 openstack-configure set /etc/neutron/neutron.conf oslo_messaging_notifications driver \
     neutron.services.metering.drivers.iptables.iptables_driver.IptablesMeteringDriver
 openstack-configure set /etc/neutron/neutron.conf agent availability_zone nova
 openstack-configure set /etc/neutron/neutron.conf agent report_interval 60
 openstack-configure set /etc/neutron/neutron.conf database use_db_reconnect true
+ini_unset_value /etc/neutron/neutron.conf domain_name
 
 cp /etc/neutron/dhcp_agent.ini /etc/neutron/dhcp_agent.ini.orig
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT enable_isolated_metadata True

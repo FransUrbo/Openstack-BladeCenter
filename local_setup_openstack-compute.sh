@@ -119,6 +119,12 @@ openstack-configure set /etc/neutron/neutron.conf keystone_authtoken region_name
 openstack-configure set /etc/neutron/neutron.conf database connection \
     "$(get_debconf_value "openstack" "keystone/password/neutron")"
 openstack-configure set /etc/neutron/neutron.conf database use_db_reconnect true
+openstack-configure set /etc/neutron/neutron.conf nova auth_url "http://${ctrlnode}:5000/v3"
+openstack-configure set /etc/neutron/neutron.conf nova password \
+    "$(get_debconf_value "openstack" "keystone/password/neutron")"
+openstack-configure set /etc/neutron/neutron.conf nova project_name service
+openstack-configure set /etc/neutron/neutron.conf nova username neutron
+ini_unset_value /etc/neutron/neutron.conf user_domain_id
 
 cp /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugins/ml2/ml2_conf.ini.orig
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini securitygroup firewall_driver iptables_hybrid
@@ -210,10 +216,12 @@ openstack-configure set /etc/nova/nova.conf cinder admin_password \
 openstack-configure set /etc/nova/nova.conf cinder admin_tenant_name
 #openstack-configure set /etc/nova/nova.conf cinder api_endpoint "http://${ctrlnode}/v2.0"
 #openstack-configure set /etc/nova/nova.conf cinder admin_url "http://${ctrlnode}/v2.0"
+#openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
+openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_version 3
+openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_port 35357
 openstack-configure set /etc/nova/nova.conf keystone_authtoken http_connect_timeout 5
 openstack-configure set /etc/nova/nova.conf keystone_authtoken http_request_max_retries 3
 openstack-configure set /etc/nova/nova.conf keystone_authtoken region_name europe-london
-#openstack-configure set /etc/nova/nova.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
 #openstack-configure set /etc/nova/nova.conf keystone_authtoken identity_uri "http://${ctrlnode}:35357/v3"
 openstack-configure set /etc/nova/nova.conf keystone_authtoken admin_user nova
 openstack-configure set /etc/nova/nova.conf keystone_authtoken admin_password \
@@ -223,14 +231,15 @@ openstack-configure set /etc/nova/nova.conf keystone_authtoken memcached_servers
 openstack-configure set /etc/nova/nova.conf neutron url "http://${ctrlnode}:9696/"
 #openstack-configure set /etc/nova/nova.conf neutron auth_url "http://${ctrlnode}:5000/v3"
 #openstack-configure set /etc/nova/nova.conf neutron auth_type v3password
-openstack-configure set /etc/nova/nova.conf neutron service_metadata_proxy false
+openstack-configure set /etc/nova/nova.conf neutron service_metadata_proxy true
 openstack-configure set /etc/nova/nova.conf neutron username neutron
 openstack-configure set /etc/nova/nova.conf neutron password \
     "$(get_debconf_value "openstack" "keystone/password/neutron")"
 openstack-configure set /etc/nova/nova.conf neutron project_domain_name default
 openstack-configure set /etc/nova/nova.conf neutron project_name service
 openstack-configure set /etc/nova/nova.conf neutron tenant_name service
-#openstack-configure set /etc/nova/nova.conf neutron user_domain_name default
+openstack-configure set /etc/nova/nova.conf neutron user_domain_name default
+openstack-configure set /etc/nova/nova.conf neutron region_name europe-london
 openstack-configure set /etc/nova/nova.conf neutron ovs_bridge br-provider
 openstack-configure set /etc/nova/nova.conf ironic admin_username ironic
 openstack-configure set /etc/nova/nova.conf ironic admin_password \
@@ -251,8 +260,7 @@ openstack-configure set /etc/nova/nova.conf vnc novncproxy_port 6080
 openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_host \$my_ip
 openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_base_url http://${ip}:6081/console
 openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_port 6081
-ini_unset_value /etc/nova/nova.conf default_domain_name
-ini_unset_value /etc/nova/nova.conf domain_name
+ini_unset_value /etc/nova/nova.conf user_domain_id
 
 cp /etc/nova/nova-compute.conf /etc/nova/nova-compute.conf.orig
 openstack-configure set /etc/nova/nova-compute.conf DEFAULT neutron_ovs_bridge br-physical
@@ -262,6 +270,8 @@ openstack-configure set /etc/nova/nova-compute.conf DEFAULT neutron_ovs_bridge b
 cp /etc/magnum/magnum.conf /etc/magnum/magnum.conf.orig
 openstack-configure set /etc/magnum/magnum.conf database connection "mysql+pymysql://magnum:${magnum_pass}@${ctrlnode}/magnum"
 
+# ======================================================================
+# Setup Neutron.
 cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openvswitch_agent.ini.orig
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings external:br-physical,infrastructure:br-infra
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs integration_bridge br-provider
