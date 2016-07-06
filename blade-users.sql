@@ -198,4 +198,9 @@ INSERT INTO `db` VALUES
 ('%.domain.tld','cinder','cinder','Y','Y','Y','Y','Y','Y','N','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y'),
 ('bladea01.domain.tld','cinder','cinder','Y','Y','Y','Y','Y','Y','N','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y');
 --
+-- https://www.digitalocean.com/community/tutorials/how-to-set-up-mysql-master-master-replication
+-- Also see "mysql-replication.sql".
+CREATE USER 'replicator'@'%.domain.tld' IDENTIFIED BY 'RL0KM98sbdwRpUh3C433pgURIsv0vL2IyK5Crrnd';
+GRANT REPLICATION slave ON *.* TO 'replicator'@'%.domain.tld';
+--
 FLUSH PRIVILEGES;
