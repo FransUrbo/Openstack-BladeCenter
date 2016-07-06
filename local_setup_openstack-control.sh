@@ -247,10 +247,8 @@ openstack-configure set /etc/nova/nova.conf DEFAULT public_interface eth1
 openstack-configure set /etc/nova/nova.conf DEFAULT service_neutron_metadata_proxy true
 openstack-configure set /etc/nova/nova.conf DEFAULT neutron_metadata_proxy_shared_secret \
     "$(get_debconf_value "neutron-metadata-agent" "/metadata_secret")"
-# TODO: Not sure how/where to enable this..
-#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_host \$my_ip
-#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_listen 0.0.0.0
-#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_listen_port 9697
+openstack-configure set /etc/nova/nova.conf DEFAULT metadata_host \$my_ip
+openstack-configure set /etc/nova/nova.conf DEFAULT metadata_listen_port 8775
 #openstack-configure set /etc/nova/nova.conf DEFAULT metadata_workers 5
 openstack-configure set /etc/nova/nova.conf DEFAULT use_forwarded_for true
 openstack-configure set /etc/nova/nova.conf DEFAULT multi_host true
@@ -547,10 +545,8 @@ openstack-configure set /etc/neutron/services_lbaas.conf haproxy interface_drive
 #    "$(get_debconf_value "neutron-metadata-agent" "neutron-metadata/metadata_secret")"
 cat <<EOF > /etc/neutron/metadata_agent.ini
 [DEFAULT]
-#auth_url = http://${ctrlnode}:5000/v3
-auth_host = ${ctrlnode}
-auth_port = 35357
-auth_protocol = http
+bind_port = 8775
+auth_url = http://${ctrlnode}:5000/v3
 auth_region = europe-london
 
 admin_tenant_name = service
@@ -558,8 +554,14 @@ admin_user = neutron
 admin_password = ${neutron_pass}
 
 nova_metadata_ip = ${ip}
+nova_metadata_protocol = http
 
-metadata_proxy_shared_secret $(get_debconf_value "neutron-metadata-agent" "neutron-metadata/metadata_secret")
+metadata_port = 8775
+metadata_proxy_shared_secret = $(get_debconf_value "neutron-metadata-agent" "neutron-metadata/metadata_secret")
+
+metadata_workers = 16
+metadata_backlog = 4096
+cache_url = memory://?default_ttl=5
 
 verbose = True
 EOF

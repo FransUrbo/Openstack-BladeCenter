@@ -1,0 +1,20 @@
+[Unit]
+Description=OpenStack Neutron Metadata agent
+After=neutron-dhcp-agent.service
+
+[Service]
+User=neutron
+Group=neutron
+Type=simple
+WorkingDirectory=/var/lib/neutron
+PermissionsStartOnly=true
+ExecStartPre=/bin/mkdir -p /var/lock/neutron /var/log/neutron /var/lib/neutron
+ExecStartPre=/bin/chown neutron:neutron /var/lock/neutron /var/log/neutron /var/lib/neutron
+ExecStart=/etc/init.d/neutron-metadata-agent systemd-start
+Restart=on-failure
+LimitNOFILE=65535
+TimeoutStopSec=65
+
+[Install]
+WantedBy=multi-user.target
+

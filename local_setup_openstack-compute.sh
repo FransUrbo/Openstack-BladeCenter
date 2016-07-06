@@ -197,15 +197,7 @@ openstack-configure set /etc/nova/nova.conf DEFAULT console_driver nova.console.
 openstack-configure set /etc/nova/nova.conf DEFAULT console_public_hostname "${hostname}"
 openstack-configure set /etc/nova/nova.conf DEFAULT console_topic console
 openstack-configure set /etc/nova/nova.conf DEFAULT linuxnet_ovs_integration_bridge br-provider
-# TODO: Not sure how/where to enable this.
-#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_host \$my_ip
-#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_port 9697
-#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_cache_expiration 60
-#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_listen 0.0.0.0
-#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_listen_port 9697
-#openstack-configure set /etc/nova/nova.conf DEFAULT metadata_workers 5
-#openstack-configure set /etc/nova/nova.conf DEFAULT use_forwarded_for true
-#openstack-configure set /etc/nova/nova.conf DEFAULT multi_host true
+openstack-configure set /etc/nova/nova.conf DEFAULT metadata_host "${ctrlnode}"
 openstack-configure set /etc/nova/nova.conf database connection "mysql+pymysql://nova:${nova_pass}@${ctrlnode}/nova"
 openstack-configure set /etc/nova/nova.conf api_database connection "mysql+pymysql://novaapi:${nova_api_pass}@${ctrlnode}/novaapi"
 openstack-configure set /etc/nova/nova.conf cinder cross_az_attach True
