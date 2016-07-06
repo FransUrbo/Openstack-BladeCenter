@@ -543,6 +543,8 @@ openstack-configure set /etc/neutron/services_lbaas.conf haproxy interface_drive
 #openstack-config --set /etc/neutron/metadata_agent.ini DEFAULT nova_metadata_ip "${ip}"
 #openstack-config --set /etc/neutron/metadata_agent.ini DEFAULT metadata_proxy_shared_secret \
 #    "$(get_debconf_value "neutron-metadata-agent" "neutron-metadata/metadata_secret")"
+#
+touch /etc/neutron/metadata_agent.ini.orig
 cat <<EOF > /etc/neutron/metadata_agent.ini
 [DEFAULT]
 bind_port = 8775
@@ -565,6 +567,7 @@ cache_url = memory://?default_ttl=5
 
 verbose = True
 EOF
+cp /etc/neutron/metadata_agent.ini /etc/neutron/metadata_agent.ini.save
 
 cp /etc/neutron/plugins/ml2/openvswitch_agent.ini /etc/neutron/plugins/ml2/openvswitch_agent.ini.orig
 openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs bridge_mappings external:br-physical,infrastructure:br-infra
