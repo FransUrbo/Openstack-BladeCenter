@@ -19,9 +19,9 @@ do_install docker.io python-pip git aufs-tools
 usermod -aG docker nova
 
 # Install Nova/docker
-cd /tmp
-pip install -e git+https://github.com/stackforge/nova-docker#egg=novadocker
-cd src/novadocker/
+cd /usr/src
+pip install -e git+https://github.com/stackforge/nova-docker#egg=novadocker nova-docker
+cd nova-docer/novadocker/
 echo "GIT $(git log | head -n1)"
 python setup.py install
 cd /root
@@ -58,7 +58,6 @@ for init in /etc/init.d/nova-*; do $init restart; done
 
 # Remove git and pip - don't need or want it any more.
 apt-get -y remove python-pip git
-rm -Rf /tmp/src
 
 # Make sure Docker start correctly.
 echo "" >> /etc/default/docker
