@@ -249,7 +249,7 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     # nova-compute-kvm : Conflicts: nova-compute-ironic but 2:13.0.0-4 is to be installed
     do_install nova-compute-kvm nova-console nova-consoleproxy \
         magnum-conductor fping ovmf designate-agent ceilometer-agent-compute \
-        neutron-openvswitch-agent 
+        neutron-openvswitch-agent nova-consoleauth spice-html5
         # NOTE: !! Apparently, L3, LBaaS, VPNaaS and FWaaS agents !!
         #       !! should not run on the Compute                  !!
         #neutron-lbaas-agent neutron-l3-agent neutron-vpnaas-agent
@@ -397,7 +397,8 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     do_install "${BARBICAN}" "${CEILOMETER}" "${CINDER}" "${DESIGNATE}" \
         "${FUEL}" "${GLANCE}" "${HEAT}" "${IRONIC}" "${MAGNUM}" "${MANILA}" \
         "${MISTRAL}" "${MURANO}" "${NEUTRON}" "${NOVA}" "${SENLIN}" \
-        "${SWIFT}" "${TROVE}" "${ZAQAR}" haproxy nfs-kernel-server rsync
+        "${SWIFT}" "${TROVE}" "${ZAQAR}" haproxy nfs-kernel-server rsync \
+        spice-html5
 
     # ======================================================================
 

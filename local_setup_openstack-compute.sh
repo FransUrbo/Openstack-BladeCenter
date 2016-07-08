@@ -193,11 +193,14 @@ openstack-configure set /etc/nova/nova.conf DEFAULT ram_allocation_ratio 1.0
 openstack-configure set /etc/nova/nova.conf DEFAULT disk_allocation_ratio 1.0
 openstack-configure set /etc/nova/nova.conf DEFAULT default_ephemeral_format xfs
 openstack-configure set /etc/nova/nova.conf DEFAULT public_interface eth1
+openstack-configure set /etc/nova/nova.conf DEFAULT consoleauth_topic consoleauth
 openstack-configure set /etc/nova/nova.conf DEFAULT console_driver nova.console.xvp.XVPConsoleProxy
 openstack-configure set /etc/nova/nova.conf DEFAULT console_public_hostname "${hostname}"
 openstack-configure set /etc/nova/nova.conf DEFAULT console_topic console
+openstack-configure set /etc/nova/nova.conf DEFAULT web /usr/share/spice-html5
 openstack-configure set /etc/nova/nova.conf DEFAULT linuxnet_ovs_integration_bridge br-provider
 openstack-configure set /etc/nova/nova.conf DEFAULT metadata_host "${ctrlnode}"
+openstack-configure set /etc/nova/nova.conf DEFAULT dhcp_domain openstack.bayour.com
 openstack-configure set /etc/nova/nova.conf database connection "mysql+pymysql://nova:${nova_pass}@${ctrlnode}/nova"
 openstack-configure set /etc/nova/nova.conf api_database connection "mysql+pymysql://novaapi:${nova_api_pass}@${ctrlnode}/novaapi"
 openstack-configure set /etc/nova/nova.conf cinder cross_az_attach True
@@ -243,15 +246,15 @@ openstack-configure set /etc/nova/nova.conf glance api_servers "http://${ctrlnod
 openstack-configure set /etc/nova/nova.conf glance num_retries 5
 #openstack-configure set /etc/nova/nova.conf glance verify_glance_signatures true
 openstack-configure set /etc/nova/nova.conf barbican os_region_name europe-london
-openstack-configure set /etc/nova/nova.conf vnc enabled true
-openstack-configure set /etc/nova/nova.conf vnc vncserver_listen \$my_ip
-openstack-configure set /etc/nova/nova.conf vnc vncserver_proxyclient_address \$my_ip
-openstack-configure set /etc/nova/nova.conf vnc novncproxy_host \$my_ip
-openstack-configure set /etc/nova/nova.conf vnc novncproxy_base_url http://${ip}:6080/vnc_auto.html
-openstack-configure set /etc/nova/nova.conf vnc novncproxy_port 6080
-openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_host \$my_ip
-openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_base_url http://${ip}:6081/console
-openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_port 6081
+openstack-configure set /etc/nova/nova.conf vnc enabled false
+openstack-configure set /etc/nova/nova.conf rdp enabled false
+openstack-configure set /etc/nova/nova.conf spice html5proxy_host 0.0.0.0
+openstack-configure set /etc/nova/nova.conf spice html5proxy_port 6082
+openstack-configure set /etc/nova/nova.conf spice html5proxy_base_url http://${ip}:6082/spice_auto.html
+openstack-configure set /etc/nova/nova.conf spice server_listen 0.0.0.0
+openstack-configure set /etc/nova/nova.conf spice server_proxyclient_address \$my_ip
+openstack-configure set /etc/nova/nova.conf spice enabled true
+openstack-configure set /etc/nova/nova.conf spice agent_enabled true
 ini_unset_value /etc/nova/nova.conf user_domain_id
 
 cp /etc/nova/nova-compute.conf /etc/nova/nova-compute.conf.orig

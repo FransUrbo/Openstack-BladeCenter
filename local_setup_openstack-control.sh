@@ -252,6 +252,7 @@ openstack-configure set /etc/nova/nova.conf DEFAULT metadata_listen_port 8775
 #openstack-configure set /etc/nova/nova.conf DEFAULT metadata_workers 5
 openstack-configure set /etc/nova/nova.conf DEFAULT use_forwarded_for true
 openstack-configure set /etc/nova/nova.conf DEFAULT multi_host true
+openstack-configure set /etc/nova/nova.conf DEFAULT dhcp_domain openstack.domain.tld
 openstack-configure set /etc/nova/nova.conf barbican os_region_name europe-london
 openstack-configure set /etc/nova/nova.conf cinder cross_az_attach True
 openstack-configure set /etc/nova/nova.conf cinder os_region_name europe-london
@@ -281,6 +282,12 @@ openstack-configure set /etc/nova/nova.conf ironic admin_password \
 openstack-configure set /etc/nova/nova.conf ironic admin_tenant_name service
 openstack-configure set /etc/nova/nova.conf glance api_servers "http://${ctrlnode}:9292/"
 openstack-configure set /etc/nova/nova.conf glance num_retries 5
+openstack-configure set /etc/nova/nova.conf rdp html5_proxy_base_url http://127.0.0.1:6083/
+openstack-configure set /etc/nova/nova.conf rdp enabled true
+openstack-configure set /etc/nova/nova.conf spice html5proxy_host 0.0.0.0
+openstack-configure set /etc/nova/nova.conf spice html5proxy_port 6082
+openstack-configure set /etc/nova/nova.conf spice html5proxy_base_url http://127.0.0.1:6082/spice_auto.html
+openstack-configure set /etc/nova/nova.conf spice agent_enabled true
 ini_unset_value /etc/nova/nova.conf default_domain_name
 ini_unset_value /etc/nova/nova.conf domain_name
 

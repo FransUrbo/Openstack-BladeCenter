@@ -1,5 +1,4 @@
-* Compute -> Console
-* Finish setting up LBaaS
+* Finish setting up LBaaS (missing files etc in package)
 
 * Install and configure Object storage (Swift)
 * Magnum [container] instance (require Swift)
