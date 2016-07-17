@@ -190,7 +190,7 @@ openstack-configure set /etc/nova/nova.conf DEFAULT network_allocate_retries 5
 openstack-configure set /etc/nova/nova.conf DEFAULT remove_unused_base_images false
 openstack-configure set /etc/nova/nova.conf DEFAULT cpu_allocation_ratio 8.0
 openstack-configure set /etc/nova/nova.conf DEFAULT ram_allocation_ratio 1.0
-openstack-configure set /etc/nova/nova.conf DEFAULT disk_allocation_ratio 1.0
+openstack-configure set /etc/nova/nova.conf DEFAULT disk_allocation_ratio 3.0
 openstack-configure set /etc/nova/nova.conf DEFAULT default_ephemeral_format xfs
 openstack-configure set /etc/nova/nova.conf DEFAULT public_interface eth1
 openstack-configure set /etc/nova/nova.conf DEFAULT consoleauth_topic consoleauth
@@ -200,7 +200,7 @@ openstack-configure set /etc/nova/nova.conf DEFAULT console_topic console
 openstack-configure set /etc/nova/nova.conf DEFAULT web /usr/share/spice-html5
 openstack-configure set /etc/nova/nova.conf DEFAULT linuxnet_ovs_integration_bridge br-provider
 openstack-configure set /etc/nova/nova.conf DEFAULT metadata_host "${ctrlnode}"
-openstack-configure set /etc/nova/nova.conf DEFAULT dhcp_domain openstack.bayour.com
+openstack-configure set /etc/nova/nova.conf DEFAULT dhcp_domain openstack.domain.tld
 openstack-configure set /etc/nova/nova.conf database connection "mysql+pymysql://nova:${nova_pass}@${ctrlnode}/nova"
 openstack-configure set /etc/nova/nova.conf api_database connection "mysql+pymysql://novaapi:${nova_api_pass}@${ctrlnode}/novaapi"
 openstack-configure set /etc/nova/nova.conf cinder cross_az_attach True
@@ -293,9 +293,25 @@ iscsiadm -m iface -I eth1 --op=new
 iscsiadm -m iface -I eth1 --op=update -n iface.vlan_priority -v 1
 
 # ======================================================================
+# Add this host to all the host aggregates.
+# NOTE: This script only runs on a blade, and all blades are identical!
+openstack aggregate list --format csv --column Name --quote none | \
+    grep -v ^Name | \
+    while read agg; do
+	openstack aggregate add host "${agg}" "$(hostname)"
+    done
+
+# ======================================================================
+# Create some Senlin (AutoScalingGroup) examples
+curl -s http://server.domain.tld/PXEBoot/test-stack3.yml > /root/test-stack3.yml
+senlin profile-create -s /root/test-stack3.yml cirros
+senlin cluster-create -p cirros -c 5 cirros5
+
+# ======================================================================
 # Save our config file state.
 find /etc -name '*.orig' | \
     while read file; do
 	f="$(echo "${file}" | sed 's@\.orig@@')"
+        cp "${f}" "${f}.save0" # Initial install states
         cp "${f}" "${f}.save"
 done
