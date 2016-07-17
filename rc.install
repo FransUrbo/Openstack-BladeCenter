@@ -202,7 +202,7 @@ EOF
 fi
 
 # Always need NTP and some basic debug tools!
-do_install ntp ntpdate strace
+do_install ntp ntpdate strace ngrep
 
 nr="$(echo "${hostname}" | \
     sed -e 's@.*blade[A-Z]@@i' -e 's@^0@@' -e 's@[a-z]$@@')"
@@ -381,7 +381,9 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     MANILA="manila-api manila-scheduler manila-share"
     MISTRAL="mistral-api mistral-engine mistral-executor"
     MURANO="murano-api murano-engine"
-    NEUTRON="neutron-server neutron-dhcp-agent neutron-metering-agent neutron-l3-agent neutron-lbaas-agent neutron-vpnaas-agent neutron-openvswitch-agent neutron-plugin-openvswitch-agent" # neutron-fwaas-agent
+    NEUTRON="neutron-openvswitch-agent neutron-plugin-openvswitch-agent"
+    NEUTRON="${NEUTRON} neutron-server neutron-dhcp-agent neutron-metering-agent neutron-lbaas-agent neutron-vpnaas-agent"
+    NEUTRON="${NEUTRON} neutron-fwaas-l3-agent"	# All the func of neutron-l3-agent with firewalling built in.
     NOVA="nova-api nova-conductor nova-scheduler nova-volume"
     SENLIN="senlin-api senlin-engine "
     SWIFT="swift-account swift-container swift-object swift-plugin-s3 swift-proxy"
