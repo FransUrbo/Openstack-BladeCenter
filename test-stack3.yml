@@ -1,0 +1,14 @@
+type: os.nova.server
+version: 1.0
+properties:
+  name: cirros_server
+  flavor: "m1.2tiny"
+  image: "cirros"
+  key_name: "Turbo Fredriksson"
+  networks:
+   - network: tenant-98
+  metadata:
+    test_key: test_value
+  user_data: >
+    #!/bin/bash
+    echo 'hello, world' > /tmp/test_file

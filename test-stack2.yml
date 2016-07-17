@@ -1,0 +1,22 @@
+[...]
+
+resources:
+  server:
+    type: OS::Nova::Server
+    properties:
+      user_data_format: SOFTWARE_CONFIG
+      key_name: { get_param: key_name }
+      block_device_mapping_v2:
+        -
+          boot_index: 0
+          delete_on_termination: True
+          device_name: vda
+          volume_size: 80
+          device_type: disk
+          image_id: { get_param: image }
+      flavor: { get_param: flavor }
+      networks:
+        - port: { get_resource: server_port }
+      user_data:
+        get_resource: server_init
+[...]

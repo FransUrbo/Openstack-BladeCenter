@@ -16,9 +16,9 @@ resources:
     properties:
       name: "Test server"
       image: "cirros"
-      flavor: "m1.tiny"
+      flavor: "m1.2tiny"
       networks:
-      - network: "tenant-97"
+      - network: "tenant-98"
 
 outputs:
   server1_private_ip:
