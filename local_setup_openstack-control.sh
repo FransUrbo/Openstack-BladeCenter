@@ -129,7 +129,6 @@ EOF
 # Get the ssh key for Cinder and Nova.
 curl -s http://${LOCALSERVER}/PXEBoot/id_rsa-control > /etc/cinder/sshkey
 chown cinder:root /etc/cinder/sshkey ; chmod 0600 /etc/cinder/sshkey
-cp /etc/cinder/sshkey /etc/nova/sshkey ; chown nova:root /etc/nova/sshkey
 
 # RabbitMQ is notoriously sucky and unstable and crashes all the effin time!
 # So install a script that checks it once a minut and if it's dead, restart
@@ -139,11 +138,6 @@ curl -s http://${LOCALSERVER}/PXEBoot/check_rabbitmq.sh > \
 chmod +x /usr/local/sbin/check_rabbitmq.sh
 echo "*/1 * * * *	root	/usr/local/sbin/check_rabbitmq.sh" > \
     /etc/cron.d/rabbitmq
-
-# Install the ZFS/ZoL Openstack Cinder plugin.
-curl -s http://${LOCALSERVER}/PXEBoot/install_cinder_zfs.sh > \
-    /var/tmp/install_cinder_zfs.sh
-sh -x /var/tmp/install_cinder_zfs.sh
 
 # ======================================================================
 
@@ -204,7 +198,7 @@ openstack-configure set /etc/manila/manila.conf DEFAULT enabled_share_protocols 
 cat <<EOF >> /etc/manila/manila.conf
 
 [lvm]
-share_backend_name = LVM_iSCSI
+share_backend_name = LVM
 share_driver = manila.share.drivers.lvm.LVMShareDriver
 driver_handles_share_servers = False
 lvm_share_volume_group = blade_center
@@ -241,7 +235,7 @@ openstack-configure set /etc/nova/nova.conf DEFAULT driver messagingv2
 openstack-configure set /etc/nova/nova.conf DEFAULT rpc_backend rabbit
 openstack-configure set /etc/nova/nova.conf DEFAULT cpu_allocation_ratio 8.0
 openstack-configure set /etc/nova/nova.conf DEFAULT ram_allocation_ratio 1.0
-openstack-configure set /etc/nova/nova.conf DEFAULT disk_allocation_ratio 1.0
+openstack-configure set /etc/nova/nova.conf DEFAULT disk_allocation_ratio 3.0
 openstack-configure set /etc/nova/nova.conf DEFAULT default_ephemeral_format xfs
 openstack-configure set /etc/nova/nova.conf DEFAULT public_interface eth1
 openstack-configure set /etc/nova/nova.conf DEFAULT service_neutron_metadata_proxy true
@@ -316,9 +310,11 @@ openstack-configure set /etc/cinder/cinder.conf DEFAULT iscsi_port 3260
 openstack-configure set /etc/cinder/cinder.conf DEFAULT iscsi_iotype blockio
 openstack-configure set /etc/cinder/cinder.conf DEFAULT iscsi_write_cache on
 openstack-configure set /etc/cinder/cinder.conf DEFAULT iscsi_ip_address \$my_ip
-openstack-configure set /etc/cinder/cinder.conf DEFAULT volume_name_template '%s'
-openstack-configure set /etc/cinder/cinder.conf DEFAULT snapshot_name_template '%s.snap'
-openstack-configure set /etc/cinder/cinder.conf DEFAULT backup_name_template '%s.back'
+# Cinder can't handle changed {volume,snapshot,backup}_name_template configuration.
+# https://bugs.launchpad.net/cinder/+bug/1602644
+#openstack-configure set /etc/cinder/cinder.conf DEFAULT volume_name_template '%s'
+#openstack-configure set /etc/cinder/cinder.conf DEFAULT snapshot_name_template '%s.snap'
+#openstack-configure set /etc/cinder/cinder.conf DEFAULT backup_name_template '%s.back'
 openstack-configure set /etc/cinder/cinder.conf DEFAULT iscsi_helper tgtadm
 openstack-configure set /etc/cinder/cinder.conf DEFAULT iscsi_protocol iscsi
 openstack-configure set /etc/cinder/cinder.conf DEFAULT volume_dd_blocksize 4M
@@ -330,18 +326,22 @@ openstack-configure set /etc/cinder/cinder.conf DEFAULT enabled_backends "${OLD:
 set -i "s@^\(volume_driver[ \t].*\)@#\1@" /etc/cinder/cinder.conf
 openstack-configure set /etc/cinder/cinder.conf DEFAULT nfs_shares_config /etc/cinder/nfs.conf
 openstack-configure set /etc/cinder/cinder.conf DEFAULT nfs_sparsed_volumes true
-openstack-configure set /etc/cinder/cinder.conf DEFAULT enable_v1_api false
+openstack-configure set /etc/cinder/cinder.conf DEFAULT enable_v1_api true
 openstack-configure set /etc/cinder/cinder.conf DEFAULT enable_v2_api true
 openstack-configure set /etc/cinder/cinder.conf DEFAULT enable_v3_api true
 openstack-configure set /etc/cinder/cinder.conf DEFAULT glance_host \$my_ip
 openstack-configure set /etc/cinder/cinder.conf DEFAULT glance_port 9292
-openstack-configure set /etc/cinder/cinder.conf DEFAULT volume_topic blade_center
 openstack-configure set /etc/cinder/cinder.conf DEFAULT default_volume_type lvm
 openstack-configure set /etc/cinder/cinder.conf DEFAULT os_region_name europe-london
 openstack-configure set /etc/cinder/cinder.conf DEFAULT osapi_volume_listen 0.0.0.0
+openstack-configure set /etc/cinder/cinder.conf DEFAULT allow_availability_zone_fallback true
+openstack-configure set /etc/cinder/cinder.conf DEFAULT image_volume_cache_enabled true
 openstack-configure set /etc/cinder/cinder.conf oslo_messaging_notifications driver messagingv2
 openstack-configure set /etc/cinder/cinder.conf keystone_authtoken memcached_servers "${ctrlnode}:11211"
+openstack-configure set /etc/cinder/cinder.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
+openstack-configure set /etc/cinder/cinder.conf keystone_authtoken region_name europe-london
 openstack-configure set /etc/cinder/cinder.conf lvm volume_group blade_center
+openstack-configure set /etc/cinder/cinder.conf database use_db_reconnect true
 #TODO: ?? Enable this ??
 echo "#*/5 * * * *	/usr/bin/cinder-volume-usage-audit --send_actions" > \
     /etc/cron.d/cinder-volume-usage-audit
@@ -484,11 +484,10 @@ openstack-configure set /etc/neutron/neutron.conf DEFAULT metadata_proxy_shared_
     "$(get_debconf_value "neutron-metadata-agent" "neutron-metadata/metadata_secret")"
 OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins)"
 # NOTE: Using "lbaasv2" gives "Plugin 'lbaasv2' not found".
-# TODO: !! Install and enable FWaaS and VPNaaS as soon as they're available: ,fwaas,vpnaas !!
-# TODO: !! Get LBaaSv2 working !!
+# TODO: The package is called 'neutron-lbaasv2-agent', not 'neutron-lbaas-agent'!
+# TODO: !! Install and enable VPNaaS as soon as it's available !!
 openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins \
-    "${OLD:+${OLD},}lbaas"
-#    "${OLD:+${OLD},}neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2"
+    "${OLD:+${OLD},}lbaas,neutron.services.firewall.fwaas_plugin.FirewallPlugin"
 openstack-configure set /etc/neutron/neutron.conf DEFAULT dns_domain openstack.domain.tld
 openstack-configure set /etc/neutron/neutron.conf DEFAULT agent_down_time 120
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken auth_host openstack.domain.tld
@@ -530,8 +529,8 @@ openstack-configure set /etc/neutron/l3_agent.ini DEFAULT ovs_integration_bridge
 cp /etc/neutron/lbaas_agent.ini /etc/neutron/lbaas_agent.ini.orig
 # TODO: !! Get LBaaSv2 working !!
 openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT device_driver \
-    neutron.services.loadbalancer.drivers.haproxy.namespace_driver.HaproxyNSDriver
-#    neutron_lbaas.services.loadbalancer.drivers.haproxy.namespace_driver.HaproxyNSDriver
+    neutron_lbaas.services.loadbalancer.drivers.haproxy.namespace_driver.HaproxyNSDriver
+#    neutron.services.loadbalancer.drivers.haproxy.namespace_driver.HaproxyNSDriver
 openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT ovs_integration_bridge br-provider
 openstack-configure set /etc/neutron/lbaas_agent.ini DEFAULT interface_driver \
     neutron.agent.linux.interface.OVSInterfaceDriver
@@ -687,6 +686,19 @@ cp /etc/swift/container-server.conf /etc/swift/container-server.conf.orig
 openstack-configure set /etc/swift/container-server.conf DEFAULT devices /swift
 
 # ======================================================================
+# Setup Senlin.
+cp /etc/senlin/senlin.conf /etc/senlin/senlin.conf.orig
+#openstack-configure set /etc/senlin/senlin.conf database use_db_reconnect true
+#openstack-configure set /etc/senlin/senlin.conf keystone_authtoken region_name europe-london
+#openstack-configure set /etc/senlin/senlin.conf keystone_authtoken memcached_servers "${ctrlnode}:11211"
+#openstack-configure set /etc/senlin/senlin.conf keystone_authtoken auth_port 35357
+#openstack-configure set /etc/senlin/senlin.conf keystone_authtoken auth_type v3password
+#openstack-configure set /etc/senlin/senlin.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
+#openstack-configure set /etc/senlin/senlin.conf keystone_authtoken identity_uri "http://${ctrlnode}:35357"
+# TODO: Until the config file contain all relevant templates, just get the whole thing.
+curl -s http://${LOCALSERVER}/PXEBoot/senlin.conf > /etc/senlin/senlin.conf
+
+# ======================================================================
 # Setup MongoDB.
 cp /etc/mongodb.conf /etc/mongodb.conf.orig
 sed -i "s@^bind_ip[ \t].*@bind_ip = 0.0.0.0@" /etc/mongodb.conf
@@ -737,7 +749,7 @@ cinder encryption-type-create --cipher aes-xts-plain64 --key_size 512 \
     --control_location front-end encrypted LuksEncryptor
 openstack volume type create --description "Local LVM volumes" --public lvm
 openstack volume type create --description "Local NFS volumes" --public nfs
-openstack volume type set --property volume_backend_name=LVM_iSCSI lvm
+openstack volume type set --property volume_backend_name=LVM lvm
 openstack volume type set --property volume_backend_name=NFS nfs
 # TODO: ?? Create (more) extra spec key-value pairs for these ??
 
@@ -783,8 +795,11 @@ neutron subnet-create --name subnet-99 --dns-nameserver 10.0.0.254 \
     --enable-dhcp --ip-version 4 --gateway 10.99.0.1 tenant-99 10.99.0.0/24
 
 # ----------------------------------------------------------------------
-# Create the router between these.
+# Setup network routers.
 # TODO: !! Need >1 l3 agents to do HA !!
+# ----------------------------------------------------------------------
+
+# Create the router between these.
 neutron router-create --distributed False --ha False provider-tenants
 
 # ----------------------------------------------------------------------
@@ -834,16 +849,77 @@ set -- $(neutron port-list -c id -c fixed_ips | grep -w 192.168.96.1)
 # ----------------------------------------------------------------------
 # Create a load balancer for each of the subnets.
 neutron lb-pool-create --lb-method LEAST_CONNECTIONS --name hapool-97 \
-    --protocol HTTP --subnet-id subnet-97 --provider haproxy
+    --protocol TCP --subnet-id subnet-97 --provider haproxy
 neutron lb-pool-create --lb-method LEAST_CONNECTIONS --name hapool-98 \
-    --protocol HTTP --subnet-id subnet-98 --provider haproxy
+    --protocol TCP --subnet-id subnet-98 --provider haproxy
 neutron lb-pool-create --lb-method LEAST_CONNECTIONS --name hapool-99 \
-    --protocol HTTP --subnet-id subnet-99 --provider haproxy
+    --protocol TCP --subnet-id subnet-99 --provider haproxy
 
 # ----------------------------------------------------------------------
 # Create a load balancer monitor.
 neutron lb-healthmonitor-create --type PING --timeout 15 --delay 15 \
     --max-retries 5
+
+# ----------------------------------------------------------------------
+# Create a VIP port on the loadbalancers
+# NOTE: Can't load balance ssh: WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED
+#neutron lb-vip-create --address 10.97.0.254 --name vip-97 \
+#    --protocol-port 22 --protocol TCP --subnet-id subnet-97 hapool-97
+#neutron lb-vip-create --address 10.98.0.253 --name vip-98 \
+#    --protocol-port 22 --protocol TCP --subnet-id subnet-98 hapool-98
+#neutron lb-vip-create --address 10.99.0.252 --name vip-99 \
+#    --protocol-port 22 --protocol TCP --subnet-id subnet-99 hapool-99
+#
+# ----------------------------------------------------------------------
+# TODO: Add instance(s) to the member list of the hapool.
+# NOTE: Can't be done automatic - need to have running instances.
+#openstack server list --column Name --column Networks --column Status
+#neutron lb-member-create --weight 1 --address ?? --protocol-port 22 \
+#    hapool-97
+
+# ----------------------------------------------------------------------
+# Setup a Firewall as a Service.
+# NOTE: Deny _everything_ to the tenant networks!
+#       Must use a floating IP to access the instance(s).
+# ----------------------------------------------------------------------
+
+# ----------------------------------------------------------------------
+# Create FWaaS rules.
+# Reject everything to all the tenant networks.
+# Allow everything to the floating IP network.
+for net in 97.0 98.0 99.0 0.250; do
+    action="reject"
+
+    for prot in tcp udp icmp; do
+        [ "${net}" = "0.250" ] && action="allow"
+        if [ "${prot}" = "icmp" ]; then
+            dst_port=""
+            src_port=""
+        else
+            dst_port="--destination-port 1:65535"
+            src_port="--source-port 1:65535"
+        fi
+
+        neutron firewall-rule-create --enabled True --protocol "${prot}" \
+            --ip-version 4 --shared --name "fw-rule-${net}-${prot}" \
+            --action "${action}" --destination-ip-address "10.${net}.0/24" \
+            --source-ip-address 0.0.0.0/0 ${dst_port} ${src_port}
+    done
+done
+
+# ----------------------------------------------------------------------
+# Create a FWaaS policy.
+rules="$(neutron firewall-rule-list  --format csv --column id --quote none | \
+    grep -v ^id)"
+neutron firewall-policy-create --shared --firewall-rules "${rules}" \
+    firewall-policy
+
+# ----------------------------------------------------------------------
+# Create a FWaaS firewall.
+# TODO: !! Need to figure out exactly how to use it and if it works with SGs !!
+# NOTE: Create the firewall, but don't bind it to a router (just yet).
+neutron firewall-create --name firewall-tenants --no-routers firewall-policy
+#neutron firewall-update --router provider-tenants firewall-tenants
 
 # ======================================================================
 # Create a LVM on /dev/sdb.
@@ -907,18 +983,23 @@ clean_security_group() {
 
 # Modify the default security group to allow everything.
 clean_security_group default
+neutron security-group-rule-create --direction egress --protocol tcp --port-range-min  80 \
+    --port-range-max 80 --remote-ip-prefix 169.254.169.254/32 default
+
+openstack security group create --description "Allow all incoming and outgoing connections." all
+clean_security_group all
 neutron security-group-rule-create --direction ingress --protocol tcp --port-range-min 1 \
-    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 default
+    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 all
 neutron security-group-rule-create --direction ingress --protocol udp --port-range-min 1 \
-    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 default
+    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 all
 neutron security-group-rule-create --direction egress  --protocol tcp --port-range-min 1 \
-    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 default
+    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 all
 neutron security-group-rule-create --direction egress  --protocol udp --port-range-min 1 \
-    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 default
+    --port-range-max 65535 --remote-ip-prefix 0.0.0.0/0 all
 neutron security-group-rule-create --direction ingress --protocol icmp --remote-ip-prefix \
-    0.0.0.0/0 default
+    0.0.0.0/0 all
 neutron security-group-rule-create --direction egress  --protocol icmp --remote-ip-prefix \
-    0.0.0.0/0 default
+    0.0.0.0/0 all
 
 openstack security group create --description "Allow incoming SSH connections." ssh
 clean_security_group ssh
@@ -990,7 +1071,7 @@ openstack quota set --key-pairs 2 --fixed-ips 2 --floating-ips 2 \
     --gigabytes 100 --secgroups 20 --secgroup-rules 5 default
 
 # ======================================================================
-# Create some host aggregates. Might be nice to have. Eventually.
+# Create some host aggregates. Might be nice to have. Eventually. Maybe.
 openstack aggregate create --zone nova infra
 openstack aggregate create --zone nova devel
 openstack aggregate create --zone nova build
@@ -1015,7 +1096,7 @@ echo "$(hostname):/shares" > /etc/cinder/cinder-nfs.conf
 chown root:cinder /etc/cinder/cinder-nfs.conf
 chmod 0640 /etc/cinder/cinder-nfs.conf
 cat <<EOF >> /etc/cinder/cinder.conf
-volume_backend_name = LVM_iSCSI
+volume_backend_name = LVM
 lvm_conf_file = /etc/cinder/cinder-lvm.conf
 lvm_type = default
 
@@ -1071,6 +1152,12 @@ lock file = /var/lock/object.lock
 EOF
 
 # ======================================================================
+# Install the ZFS/ZoL Openstack Cinder plugin.
+curl -s http://${LOCALSERVER}/PXEBoot/install_cinder_zfs.sh > \
+    /var/tmp/install_cinder_zfs.sh
+sh -x /var/tmp/install_cinder_zfs.sh
+
+# ======================================================================
 # Import a bunch of external images.
 # NOTE: Need to run this with nohup in the background, because this will
 #       take a while!
@@ -1083,7 +1170,7 @@ nohup sh -x /var/tmp/install_images.sh > \
 # ======================================================================
 # TODO: Disable some services that don't work at the moment.
 for service in trove-guestagent trove-taskmanager designate-pool-manager \
-    designate-central cinder-volume manila-share
+    designate-central manila-share
 do
     /etc/init.d/${service} stop
     chmod -x /etc/init.d/${service}
@@ -1094,6 +1181,7 @@ done
 find /etc -name '*.orig' | \
     while read file; do
 	f="$(echo "${file}" | sed 's@\.orig@@')"
+        cp "${f}" "${f}.save0" # Initial install states
         cp "${f}" "${f}.save"
 done
 
