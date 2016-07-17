@@ -2,26 +2,11 @@
 
 # https://www.logilab.org/blogentry/114769
 # https://github.com/tparker00/Openstack-ZFS
+# https://github.com/FransUrbo/Openstack-ZFS
 
-# TODO:
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume [req-a5eb2668-861f-4106-a6da-26f4ec7d41f5 - - - - -] Volume service bladeA01b@zol failed to start.
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume Traceback (most recent call last):
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume   File "/usr/lib/python2.7/dist-packages/cinder/cmd/volume.py", line 81, in main
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume     binary='cinder-volume')
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume   File "/usr/lib/python2.7/dist-packages/cinder/service.py", line 263, in create
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume     service_name=service_name)
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume   File "/usr/lib/python2.7/dist-packages/cinder/service.py", line 134, in __init__
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume     *args, **kwargs)
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume   File "/usr/lib/python2.7/dist-packages/cinder/volume/manager.py", line 284, in __init__
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume     active_backend_id=curr_active_backend_id)
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume   File "/usr/lib/python2.7/dist-packages/oslo_utils/importutils.py", line 44, in import_object
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume     return import_class(import_str)(*args, **kwargs)
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume   File "/usr/lib/python2.7/dist-packages/oslo_utils/importutils.py", line 30, in import_class
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume     __import__(mod_str)
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume   File "/usr/lib/python2.7/dist-packages/cinder/volume/zol.py", line 32, in <module>
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume     from cinder import flags
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume ImportError: cannot import name flags
-# 2016-06-23 12:55:39.129 13819 ERROR cinder.cmd.volume
+do_install() {
+    apt-get -y --no-install-recommends install $*
+}
 
 if [ ! -e "/root/admin-openrc" ]; then
     echo "The /root/admin-openrc file don't exists."
@@ -53,12 +38,17 @@ ip="$(echo "${2}" | sed 's@.*:@@')"
 hostname="$(cat /etc/hostname)"
 
 # ======================================================================
+# Install the support packages for Openstack-ZFS
+do_install git
 
+# ======================================================================
 # Get the Cinder-ZFS/ZoL plugin
-#curl -s https://raw.githubusercontent.com/tparker00/Openstack-ZFS/master/zol.py > \
-curl -s http://${LOCALSERVER}/PXEBoot/nova-zol.py-tparker+mariocar > \
-    /usr/lib/python2.7/dist-packages/cinder/volume/drivers/zol.py
+cd /usr/src
+git clone https://github.com/FransUrbo/Openstack-ZFS.git
+cp zol.py /usr/lib/python2.7/dist-packages/cinder/volume/drivers/
+pycompile /usr/lib/python2.7/dist-packages/cinder/volume/drivers/zol.py
 
+# ======================================================================
 # Update Cinder configuration files
 cat <<EOF >> /etc/cinder/rootwrap.d/volume.filters
 
@@ -68,30 +58,70 @@ EOF
 
 cat <<EOF >> /etc/cinder/cinder.conf
 
-# ZFS/ZoL driver - https://github.com/tparker00/Openstack-ZFS
+# ZFS/ZoL driver - https://github.com/FransUrbo/Openstack-ZFS.git
 [zol]
 volume_driver = cinder.volume.drivers.zol.ZFSonLinuxISCSIDriver
-volume_group = share/VirtualMachines/Blade_Center
-volume_backend_name = ZFS_iSCSI
-iscsi_ip_prefix = 192.168.69.8
-san_thin_provision = false
-san_ip = ${ip}
+volume_backend_name = ZOL
+
 san_zfs_volume_base = share/VirtualMachines/Blade_Center
+san_zfs_compression = lz4
+san_zfs_checksum = sha256
+zol_max_over_subscription_ratio = 4.0
+
 san_is_local = false
+san_ip = 192.168.69.8
 san_login = root
-san_private_key = /etc/nova/sshkey
-use_cow_images = false
-san_zfs_command = /var/www/PXEBoot/zfswrapper
+san_private_key = /etc/cinder/sshkey
+san_thin_provision = true
+
+ssh_conn_timeout = 15
+
 verbose = true
+debug = true
 EOF
 
-# TODO: !! See the top of the file !!
-#OLD="$(openstack-configure get /etc/cinder/cinder.conf DEFAULT enabled_backends)"
-#openstack-configure set /etc/cinder/cinder.conf DEFAULT enabled_backends "${OLD:+${OLD},}zol"
-#for init in /etc/init.d/cinder-*; do $init restart; done
-#openstack volume type create --description "ZFS volumes" --public zfs
-#openstack volume type set --property volume_backend_name=ZFS_iSCSI zfs
+OLD="$(openstack-configure get /etc/cinder/cinder.conf DEFAULT enabled_backends)"
+openstack-configure set /etc/cinder/cinder.conf DEFAULT enabled_backends "${OLD:+${OLD},}zol"
+for init in /etc/init.d/cinder-*; do $init restart; done
 
-# Get the Cinder ZFS/ZoL ssh keys to use with ZFS/ZoL SAN.
-curl -s http://${LOCALSERVER}/PXEBoot/var/www/PXEBoot/id_rsa-control > /etc/nova/sankey
-chown nova /etc/nova/sankey
+# ======================================================================
+# Create host aggregate.
+openstack aggregate create --zone nova --property volume_backend_name=ZOL zfs
+
+# ======================================================================
+# Create volume type.
+openstack volume type create --description "ZFS volumes" --public zfs
+openstack volume type set --property volume_backend_name=ZOL zfs
+
+# ======================================================================
+# Create flavors.
+openstack flavor create --ram   512 --disk  2 --vcpus 1 --disk  5 z1.1nano
+openstack flavor create --ram  1024 --disk 10 --vcpus 1 --disk  5 z1.2tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 1 --disk 10 z1.3small
+openstack flavor create --ram  4096 --disk 40 --vcpus 1 z1.4medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 1 z1.5large
+openstack flavor create --ram 16384 --disk 40 --vcpus 1 z1.6xlarge
+
+openstack flavor create --ram  1024 --disk 10 --vcpus 2 --disk 5 z2.1tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 2 z2.2small
+openstack flavor create --ram  4096 --disk 40 --vcpus 2 z2.3medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 2 z2.4large
+openstack flavor create --ram 16384 --disk 40 --vcpus 2 z2.5xlarge
+
+openstack flavor create --ram  1024 --disk 20 --vcpus 3 --disk  5 z3.1tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 3 --disk 10 z3.2small
+openstack flavor create --ram  4096 --disk 40 --vcpus 3 z3.3medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 3 z3.4large
+openstack flavor create --ram 16384 --disk 40 --vcpus 3 z3.5xlarge
+
+openstack flavor create --ram  1024 --disk 10 --vcpus 4 --disk  5 z4.1tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 4 --disk 10 z4.2small
+openstack flavor create --ram  4096 --disk 40 --vcpus 4 z4.3medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 4 z4.4large
+openstack flavor create --ram 16384 --disk 40 --vcpus 4 z4.5xlarge
+
+openstack flavor list --all --column Name --format csv --quote none | \
+    grep ^z | \
+    while read flavor; do
+	openstack flavor set --property volume_backend_name=ZOL "${flavor}"
+    done
