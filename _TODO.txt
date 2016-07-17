@@ -1,4 +1,8 @@
-* Finish setting up LBaaS (missing files etc in package)
+* Setup/Fix ZoL volume storage
+  + Can't create an instance with a ZFS volume.
+    => There are no capabilities to retrieve
+* Finish setup FWaaS
+  + Can't create rules to accept connection.
 
 * Install and configure Object storage (Swift)
 * Magnum [container] instance (require Swift)
@@ -16,13 +20,12 @@
   + Multi-master RabbitMQ
   + Multi-master MongoDB
 * LDAP authentication
-* Setup/Fix ZoL volume storage
 
-* Verify LVM volume storage
-* Verify NFS volume storage
 * Verify Manila (Shared fs)
 * Verify Mistral (Workflow)
 * Verify Trove (DBaaS)
   http://docs.openstack.org/icehouse/install-guide/install/yum/content/trove-verify.html
 * Verify Celiometer (Telemetry)
   http://docs.openstack.org/icehouse/install-guide/install/yum/content/ceilometer-verify.html
+* Verify Murano (App catalog - ?)
+  => ERROR murano.common.statservice AttributeError: 'module' object has no attribute 'NUM_CPUS'
