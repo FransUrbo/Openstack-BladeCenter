@@ -290,7 +290,7 @@ openstack-configure set /etc/neutron/plugins/ml2/openvswitch_agent.ini ovs local
 cp /etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf.orig
 openstack-configure set /etc/ceilometer/ceilometer.conf DEFAULT rpc_backend rabbit
 openstack-configure set /etc/ceilometer/ceilometer.conf keystone_authtoken memcached_servers "${ctrlnode}:11211"
-openstack-configure set /etc/ceilometer/ceilometer.conf database connection "mongodb://ceilometer:${mongo_ceilodb_pass}${ctrlnode}:27017/ceilometer"
+openstack-configure set /etc/ceilometer/ceilometer.conf database connection "mongodb://ceilometer:${mongo_ceilodb_pass}@${ctrlnode}:27017/ceilometer"
 # TODO: 2h?
 openstack-configure set /etc/ceilometer/ceilometer.conf database metering_time_to_live 7200
 openstack-configure set /etc/ceilometer/ceilometer.conf database event_time_to_live 7200

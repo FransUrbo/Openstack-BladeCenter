@@ -197,7 +197,7 @@ openstack-configure set /etc/designate/designate.conf service:central managed_re
 openstack-configure set /etc/designate/designate.conf pool_manager_cache:memcache memcached_servers "${ctrlnode}:11211"
 openstack-configure set /etc/designate/designate.conf network_api:neutron endpoints "europe-london\|http://${ctrlnode}:9696/"
 openstack-configure set /etc/designate/designate.conf network_api:neutron admin_username admin
-openstack-configure set /etc/designate/designate.conf network_api:neutron admin_password "${neutron_pass}"
+openstack-configure set /etc/designate/designate.conf network_api:neutron admin_password "$(get_debconf_value "openstack" "keystone/password/admin password")"
 openstack-configure set /etc/designate/designate.conf network_api:neutron auth_url "http://${ctrlnode}:35357/v2.0"
 openstack-configure set /etc/designate/designate.conf network_api:neutron admin_tenant_name service
 openstack-configure set /etc/designate/designate.conf network_api:neutron auth_strategy keystone
