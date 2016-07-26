@@ -70,6 +70,7 @@ zol_max_over_subscription_ratio = 4.0
 
 san_is_local = false
 san_ip = 192.168.69.8
+#san_ip = 10.0.3.254
 san_login = root
 san_private_key = /etc/cinder/sshkey
 san_thin_provision = true
