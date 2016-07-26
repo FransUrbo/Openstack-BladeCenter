@@ -1,0 +1,49 @@
+---
+
+- name: default
+  # The name is immutable. There will be no option to change the name after
+  # creation and the only way will to change it will be to delete it
+  # (and all zones associated with it) and recreate it.
+  description: Default Bind9 Pool
+
+
+  # Attributes are Key:Value pairs that describe the pool. for example the level
+  # of service (i.e. service_tier:GOLD), capabilities (i.e. anycast: true) or
+  # other metadata. Users can use this infomation to point their zones to the
+  # correct pool
+  attributes: {}
+
+  # List out the NS records for zones hosted within this pool
+  ns_records:
+    - hostname: ns%NR%.openstack.domain.tld.
+      priority: %NR%
+
+  # List out the nameservers for this pool.
+  nameservers:
+    - host: 10.0.4.%NR%
+      port: 53
+
+  # List out the targets for this pool.
+  targets:
+    - type: bind9
+      description: Bind9 Server %NR%
+
+      # List out the designate-mdns servers from which Bind9 servers should
+      # request zone transfers (AXFRs) from.
+      masters:
+        - host: 10.0.4.%NR%
+          port: 5354
+
+      # Bind9 Configuration options
+      options:
+        host: 10.0.4.%NR%
+        port: 53
+        rndc_host: 10.0.4.%NR%
+        rndc_port: 953
+        rndc_key_file: /etc/designate/rndc.key
+
+  # Optional list of additional IP/Port's for which designate-mdns will send
+  # DNS NOTIFY packets to
+  #also_notifies:
+  # - host: 192.0.2.4
+  #   port: 53
