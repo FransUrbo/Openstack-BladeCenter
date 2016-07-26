@@ -188,13 +188,4 @@ if [ ! -e "debian-8.5.0-openstack-amd64.qcow2" ]; then
         --file debian-8.5.0-openstack-amd64.qcow2 jessie
 fi
 
-if [ ! -e "mysql.qcow2" ]; then
-    #wget http://tarballs.openstack.org/trove/images/ubuntu/mysql.qcow2
-    wget http://${LOCALSERVER}/PXEBoot/Images/mysql.qcow2
-#    openstack image create ${GENERAL_OPTS} --min-disk 3 \
-#        --property os_command_line='/usr/sbin/sshd -D' \
-#        --property os_distro=debian --property os_version=8 \
-#        --file mysql.qcow2 trove-mysql
-fi
-
 echo "=> W E ' R E   A L L   D O N E : $(date) <="
