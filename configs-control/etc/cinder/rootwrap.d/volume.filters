@@ -1,0 +1,120 @@
+[Filters]
+ietadm: CommandFilter, ietadm, root
+tgtadm: CommandFilter, tgtadm, root
+iscsictl: CommandFilter, iscsictl, root
+tgt-admin: CommandFilter, tgt-admin, root
+cinder-rtstool: CommandFilter, cinder-rtstool, root
+scstadmin: CommandFilter, scstadmin, root
+pvs: EnvFilter, env, root, LC_ALL=C, pvs
+vgs: EnvFilter, env, root, LC_ALL=C, vgs
+lvs: EnvFilter, env, root, LC_ALL=C, lvs
+lvdisplay: EnvFilter, env, root, LC_ALL=C, lvdisplay
+pvs_lvmconf: EnvFilter, env, root, LVM_SYSTEM_DIR=, LC_ALL=C, pvs
+vgs_lvmconf: EnvFilter, env, root, LVM_SYSTEM_DIR=, LC_ALL=C, vgs
+lvs_lvmconf: EnvFilter, env, root, LVM_SYSTEM_DIR=, LC_ALL=C, lvs
+lvdisplay_lvmconf: EnvFilter, env, root, LVM_SYSTEM_DIR=, LC_ALL=C, lvdisplay
+privsep-rootwrap: RegExpFilter, privsep-helper, root, privsep-helper, --config-file, /etc/(?!\.\.).*, --privsep_context, os_brick.privileged.default, --privsep_sock_path, /tmp/.*
+scsi_id: CommandFilter, /lib/udev/scsi_id, root
+drbdadm: CommandFilter, drbdadm, root
+vgcreate: CommandFilter, vgcreate, root
+lvcreate: EnvFilter, env, root, LC_ALL=C, lvcreate
+lvcreate_lvmconf: EnvFilter, env, root, LVM_SYSTEM_DIR=, LC_ALL=C, lvcreate
+dd: CommandFilter, dd, root
+lvremove: CommandFilter, lvremove, root
+lvrename: CommandFilter, lvrename, root
+lvextend: EnvFilter, env, root, LC_ALL=C, lvextend
+lvextend_lvmconf: EnvFilter, env, root, LVM_SYSTEM_DIR=, LC_ALL=C, lvextend
+lvchange: CommandFilter, lvchange, root
+lvconvert: CommandFilter, lvconvert, root
+iscsiadm: CommandFilter, iscsiadm, root
+shred: CommandFilter, shred, root
+chown: CommandFilter, chown, root
+ionice_1: ChainingRegExpFilter, ionice, root, ionice, -c[0-3], -n[0-7]
+ionice_2: ChainingRegExpFilter, ionice, root, ionice, -c[0-3]
+cgcreate: CommandFilter, cgcreate, root
+cgset: CommandFilter, cgset, root
+cgexec: ChainingRegExpFilter, cgexec, root, cgexec, -g, blkio:\S+
+dmsetup: CommandFilter, dmsetup, root
+ln: CommandFilter, ln, root
+qemu-img: EnvFilter, env, root, LC_ALL=C, qemu-img
+qemu-img_convert: CommandFilter, qemu-img, root
+udevadm: CommandFilter, udevadm, root
+cat: CommandFilter, cat, root
+stat: CommandFilter, stat, root
+mount: CommandFilter, mount, root
+df: CommandFilter, df, root
+du: CommandFilter, du, root
+truncate: CommandFilter, truncate, root
+chmod: CommandFilter, chmod, root
+rm: CommandFilter, rm, root
+netapp_nfs_find: RegExpFilter, find, root, find, ^[/]*([^/\0]+(/+)?)*$, -maxdepth, \d+, -name, img-cache.*, -amin, \+\d+
+chgrp: CommandFilter, chgrp, root
+umount: CommandFilter, umount, root
+fallocate: CommandFilter, fallocate, root
+hus-cmd: CommandFilter, hus-cmd, root
+hus-cmd_local: CommandFilter, /usr/local/bin/hus-cmd, root
+ssc: CommandFilter, ssc, root
+ls: CommandFilter, ls, root
+tee: CommandFilter, tee, root
+multipath: CommandFilter, multipath, root
+multipathd: CommandFilter, multipathd, root
+systool: CommandFilter, systool, root
+blockdev: CommandFilter, blockdev, root
+mv: CommandFilter, mv, root
+cp: CommandFilter, cp, root
+mmgetstate: CommandFilter, /usr/lpp/mmfs/bin/mmgetstate, root
+mmclone: CommandFilter, /usr/lpp/mmfs/bin/mmclone, root
+mmlsattr: CommandFilter, /usr/lpp/mmfs/bin/mmlsattr, root
+mmchattr: CommandFilter, /usr/lpp/mmfs/bin/mmchattr, root
+mmlsconfig: CommandFilter, /usr/lpp/mmfs/bin/mmlsconfig, root
+mmlsfs: CommandFilter, /usr/lpp/mmfs/bin/mmlsfs, root
+mmlspool: CommandFilter, /usr/lpp/mmfs/bin/mmlspool, root
+mkfs: CommandFilter, mkfs, root
+mmcrfileset: CommandFilter, /usr/lpp/mmfs/bin/mmcrfileset, root
+mmlinkfileset: CommandFilter, /usr/lpp/mmfs/bin/mmlinkfileset, root
+mmunlinkfileset: CommandFilter, /usr/lpp/mmfs/bin/mmunlinkfileset, root
+mmdelfileset: CommandFilter, /usr/lpp/mmfs/bin/mmdelfileset, root
+mmcrsnapshot: CommandFilter, /usr/lpp/mmfs/bin/mmcrsnapshot, root
+mmdelsnapshot: CommandFilter, /usr/lpp/mmfs/bin/mmdelsnapshot, root
+find_maxdepth_inum: RegExpFilter, find, root, find, ^[/]*([^/\0]+(/+)?)*$, -maxdepth, \d+, -inum, \d+
+aoe-revalidate: CommandFilter, aoe-revalidate, root
+aoe-discover: CommandFilter, aoe-discover, root
+aoe-flush: CommandFilter, aoe-flush, root
+sg_scan: CommandFilter, sg_scan, root
+dsmc:CommandFilter,/usr/bin/dsmc,root
+raidqry: CommandFilter, raidqry, root
+raidcom: CommandFilter, raidcom, root
+pairsplit: CommandFilter, pairsplit, root
+paircreate: CommandFilter, paircreate, root
+pairdisplay: CommandFilter, pairdisplay, root
+pairevtwait: CommandFilter, pairevtwait, root
+horcmstart.sh: CommandFilter, horcmstart.sh, root
+horcmshutdown.sh: CommandFilter, horcmshutdown.sh, root
+horcmgr: EnvFilter, env, root, HORCMINST=, /etc/horcmgr
+auman: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/auman
+auluref: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/auluref
+auhgdef: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/auhgdef
+aufibre1: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/aufibre1
+auhgwwn: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/auhgwwn
+auhgmap: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/auhgmap
+autargetmap: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/autargetmap
+aureplicationvvol: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/aureplicationvvol
+auluadd: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/auluadd
+auludel: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/auludel
+auluchgsize: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/auluchgsize
+auchapuser: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/auchapuser
+autargetdef: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/autargetdef
+autargetopt: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/autargetopt
+autargetini: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/autargetini
+auiscsi: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/auiscsi
+audppool: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/audppool
+aureplicationlocal: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/aureplicationlocal
+aureplicationmon: EnvFilter, env, root, LANG=, STONAVM_HOME=, LD_LIBRARY_PATH=, STONAVM_RSP_PASS=, STONAVM_ACT=, /usr/stonavm/aureplicationmon
+vgc-cluster: CommandFilter, vgc-cluster, root
+pstorage-mount: CommandFilter, pstorage-mount, root
+pstorage: CommandFilter, pstorage, root
+drv_cfg: CommandFilter, /opt/emc/scaleio/sdc/bin/drv_cfg, root, /opt/emc/scaleio/sdc/bin/drv_cfg, --query_guid
+zfs: CommandFilter, /sbin/zfs, root
+zpool: CommandFilter, /sbin/zpool, root
+iscsiadm: CommandFilter, /usr/bin/iscsiadm, root
+find: CommandFilter, /usr/bin/find, root
