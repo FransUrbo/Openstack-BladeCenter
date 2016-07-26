@@ -1,3 +1,6 @@
+#http://docs.openstack.org/developer/heat/template_guide/hot_guide.html
+#https://github.com/openstack/heat-templates/blob/master/hot/servers_in_existing_neutron_network_no_floating_ips.yaml
+#https://github.com/openstack/heat-templates
 heat_template_version: 2013-05-23
 
 description: Test Template
@@ -5,22 +8,58 @@ description: Test Template
 parameters:
   ImageID:
     type: string
+    default: "cirros"
     description: Image use to boot a server
+
+  Flavor:
+    type: string
+    default: "m1.2tiny"
+    description: Flavor for the server
+
+  VolumeSize:
+    type: number
+    description: Size of additional volume to attach to instance
+    default: 5
+    constraints:
+    - range: { min: 1, max: 10 }
+
   NetID:
     type: string
     description: Network ID for the server
 
 resources:
-  server1:
+  instance:
     type: OS::Nova::Server
     properties:
-      name: "Test server"
-      image: "cirros"
-      flavor: "m1.2tiny"
+      name: "stack1"
+      key_name: "Turbo Fredriksson"
+      security_groups: [ default, ssh ]
+      flavor: { get_param: Flavor }
+      image: { get_param: ImageID }
       networks:
-      - network: "tenant-98"
+      - network: { get_param: NetID }
+      metadata:
+        dns_name: stack1
+      user_data:
+        str_replace:
+          template: |
+            #!/bin/sh
+
+            env > $HOME/user_data.txt
+
+  volume:
+    type: OS::Cinder::Volume
+    properties:
+      size: { get_param: VolumeSize }
+
+  volume_attachment:
+    type: OS::Cinder::VolumeAttachment
+    properties:
+      instance_uuid: { get_resource: instance }
+      volume_id: { get_resource: volume }
+      mountpoint: /dev/vdb
 
 outputs:
-  server1_private_ip:
+  private_ip:
     description: IP address of the server in the private network
-    value: { get_attr: [ server1, first_address ] }
+    value: { get_attr: [ instance, first_address ] }
