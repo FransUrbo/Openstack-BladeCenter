@@ -79,13 +79,31 @@ if echo "${hostname}" | grep -iq "^blade[A-Z][0-9][0-9]"; then
     echo "=> Generic blade installation."
 
     # Upgrade system to Sid.
+    # NOTE: Work around issues with failed installation/upgrade.
+    #       => Restart of rpcbind won't work properly.
+    set +e
     apt-get update
     apt-get -y dist-upgrade
+    if [ "${?}" != "0" ]; then
+        killall -9 rpcbind
+        dpkg --configure --pending
+        apt-get -y dist-upgrade
+    fi
+    set -e
 
     # Need to modify sshd config in Sid.
     # TODO: Generate new, personal, ssh keys with ECDSA.
     echo 'PubkeyAcceptedKeyTypes=+ssh-dss' >> /etc/ssh/sshd_config
     systemctl restart ssh
+
+    # Get around some weird issue.
+    # => Temporary failure resolving 'server.domain.tld'
+    # resolv.conf is empty!!
+    cat <<EOF > /etc/resolv.conf
+domain domain.tld
+search domain.tld.
+nameserver 10.0.0.254
+EOF
 
     # Install the HP utilities, dbconfig and Openstack packaging tools.
     do_install hp-snmp-agents hponcfg dbconfig-mysql openstack-pkg-tools \
@@ -198,11 +216,18 @@ EOF
     curl -s http://${LOCALSERVER}/PXEBoot/upgrade_system.sh > \
         /usr/local/sbin/upgrade_system.sh
     chmod +x /usr/local/sbin/upgrade_system.sh
-    ln -s /usr/local/sbin/upgrade_system.sh /etc/cron.daily/
+    ln -s /usr/local/sbin/upgrade_system.sh /etc/cron.daily/upgrade_system
 fi
 
 # Always need NTP and some basic debug tools!
 do_install ntp ntpdate strace ngrep
+
+# Make sure to set the correct time.
+/etc/init.d/ntp stop
+ntpdate -b -s 0.debian.pool.ntp.org 1.debian.pool.ntp.org 2.debian.pool.ntp.org
+hwclock --systohc
+/etc/init.d/ntp start
+rm  /var/lib/dpkg/lock
 
 nr="$(echo "${hostname}" | \
     sed -e 's@.*blade[A-Z]@@i' -e 's@^0@@' -e 's@[a-z]$@@')"
@@ -247,9 +272,11 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     # Install the Compute packages.
     # nova-compute-ironic : Conflicts: nova-compute-kvm but 2:13.0.0-4 is to be installed
     # nova-compute-kvm : Conflicts: nova-compute-ironic but 2:13.0.0-4 is to be installed
-    do_install nova-compute-kvm nova-console nova-consoleproxy \
-        magnum-conductor fping ovmf designate-agent ceilometer-agent-compute \
-        neutron-openvswitch-agent nova-consoleauth spice-html5
+    do_install nova-compute-kvm nova-console magnum-conductor fping \
+        ovmf designate-agent ceilometer-agent-compute genisoimage \
+        neutron-openvswitch-agent spice-html5
+        
+        
         # NOTE: !! Apparently, L3, LBaaS, VPNaaS and FWaaS agents !!
         #       !! should not run on the Compute                  !!
         #neutron-lbaas-agent neutron-l3-agent neutron-vpnaas-agent
@@ -265,11 +292,6 @@ if echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -ge "3" ]; then
     curl -s http://${LOCALSERVER}/PXEBoot/local_setup_openstack-compute.sh > \
         /var/tmp/local_setup_openstack-compute.sh
     sh -x /var/tmp/local_setup_openstack-compute.sh
-
-    # Install the Nova Docker plugin.
-    curl -s http://${LOCALSERVER}/PXEBoot/install_nova_docker.sh > \
-        /var/tmp/install_nova_docker.sh
-    sh /var/tmp/install_nova_docker.sh
 elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     # => A Control node
     echo "=> Installing a Control node."
@@ -372,13 +394,14 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
     BARBICAN="barbican-api barbican-keystone-listener barbican-worker "
     CEILOMETER="ceilometer-api ceilometer-agent-ipmi ceilometer-agent-notification ceilometer-agent-central ceilometer-alarm-notifier ceilometer-collector"
     CINDER="cinder-api cinder-scheduler cinder-backup cinder-volume "
-    DESIGNATE="designate-api designate-agent designate designate-central designate-mdns designate-pool-manager designate-sink designate-zone-manager"
+    DESIGNATE="designate-api designate-agent designate designate-central designate-mdns designate-pool-manager designate-sink designate-zone-manager python-designate-dashboard"
+# TODO: !! Isn't completely packaged yet !!
 #    FUEL="fuel-agent fuel-ha-utils fuel-migrate fuel-misc fuel-nailgun-agent fuel-notify fuel-rabbit-fence fuel-umm fuel-web-apache"
     GLANCE="glance glance-glare"
-    HEAT="heat-api heat-engine "
+    HEAT="heat-api heat-engine heat-api-cfn heat-api-cloudwatch heat-cfntools"
     IRONIC="ironic-api ironic-conductor ironic-fa-deploy ironic-inspector"
     MAGNUM="magnum-api magnum-conductor"
-    MANILA="manila-api manila-scheduler manila-share"
+    MANILA="manila-api manila-scheduler manila-share python-manila-ui"
     MISTRAL="mistral-api mistral-engine mistral-executor"
     MURANO="murano-api murano-engine"
     NEUTRON="neutron-openvswitch-agent neutron-plugin-openvswitch-agent"
@@ -391,21 +414,20 @@ elif echo "${hostname}" | grep -qi "^blade" && [ "${nr}" -le "2" ]; then
         # => only on one of the storage nodes.
         SWIFT="${SWIFT} swift-object-expirer"
     fi
-    TROVE="trove-api trove-guestagent trove-conductor trove-taskmanager"
-    ZAQAR="zaqar-server"
+    TROVE="trove-api trove-guestagent trove-conductor trove-taskmanager python-trove-dashboard"
+    ZAQAR="zaqar-server python-zaqar-ui"
 
     # Install Openstack services.
-    # TODO: !! Isn't completely packaged yet: "${FUEL}" !! 
     do_install "${BARBICAN}" "${CEILOMETER}" "${CINDER}" "${DESIGNATE}" \
         "${FUEL}" "${GLANCE}" "${HEAT}" "${IRONIC}" "${MAGNUM}" "${MANILA}" \
         "${MISTRAL}" "${MURANO}" "${NEUTRON}" "${NOVA}" "${SENLIN}" \
         "${SWIFT}" "${TROVE}" "${ZAQAR}" haproxy nfs-kernel-server rsync \
-        spice-html5
+        nova-consoleauth nova-consoleproxy spice-html5 bind9
 
     # ======================================================================
 
     # Openstack is now installed. Correctly we hope - TODO: Check this somehow?
-    # Time to do tune the setup for my use-case(s).
+    # Time to tune the setup for my use-case(s).
 
     # ======================================================================
 
