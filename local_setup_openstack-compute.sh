@@ -191,6 +191,7 @@ openstack-configure set /etc/nova/nova.conf DEFAULT remove_unused_base_images fa
 openstack-configure set /etc/nova/nova.conf DEFAULT cpu_allocation_ratio 8.0
 openstack-configure set /etc/nova/nova.conf DEFAULT ram_allocation_ratio 1.0
 openstack-configure set /etc/nova/nova.conf DEFAULT disk_allocation_ratio 3.0
+#openstack-configure set /etc/nova/nova.conf DEFAULT compute_resources volume_backend_name
 openstack-configure set /etc/nova/nova.conf DEFAULT default_ephemeral_format xfs
 openstack-configure set /etc/nova/nova.conf DEFAULT public_interface eth1
 openstack-configure set /etc/nova/nova.conf DEFAULT consoleauth_topic consoleauth
@@ -201,8 +202,9 @@ openstack-configure set /etc/nova/nova.conf DEFAULT web /usr/share/spice-html5
 openstack-configure set /etc/nova/nova.conf DEFAULT linuxnet_ovs_integration_bridge br-provider
 openstack-configure set /etc/nova/nova.conf DEFAULT metadata_host "${ctrlnode}"
 openstack-configure set /etc/nova/nova.conf DEFAULT dhcp_domain openstack.domain.tld
-openstack-configure set /etc/nova/nova.conf database connection "mysql+pymysql://nova:${nova_pass}@${ctrlnode}/nova"
 openstack-configure set /etc/nova/nova.conf api_database connection "mysql+pymysql://novaapi:${nova_api_pass}@${ctrlnode}/novaapi"
+openstack-configure set /etc/nova/nova.conf database connection "mysql+pymysql://nova:${nova_pass}@${ctrlnode}/nova"
+openstack-configure set /etc/nova/nova.conf cells capabilities volume_type=lvm,zfs,nfs
 openstack-configure set /etc/nova/nova.conf cinder cross_az_attach True
 openstack-configure set /etc/nova/nova.conf cinder os_region_name europe-london
 openstack-configure set /etc/nova/nova.conf cinder admin_username ironic
@@ -232,7 +234,6 @@ openstack-configure set /etc/nova/nova.conf neutron password \
     "$(get_debconf_value "openstack" "keystone/password/neutron")"
 openstack-configure set /etc/nova/nova.conf neutron project_domain_name default
 openstack-configure set /etc/nova/nova.conf neutron project_name service
-openstack-configure set /etc/nova/nova.conf neutron tenant_name service
 openstack-configure set /etc/nova/nova.conf neutron user_domain_name default
 openstack-configure set /etc/nova/nova.conf neutron region_name europe-london
 openstack-configure set /etc/nova/nova.conf neutron ovs_bridge br-provider
@@ -247,18 +248,29 @@ openstack-configure set /etc/nova/nova.conf glance num_retries 5
 #openstack-configure set /etc/nova/nova.conf glance verify_glance_signatures true
 openstack-configure set /etc/nova/nova.conf barbican os_region_name europe-london
 openstack-configure set /etc/nova/nova.conf vnc enabled false
+openstack-configure set /etc/nova/nova.conf vnc vncserver_listen \$my_ip
+openstack-configure set /etc/nova/nova.conf vnc vncserver_proxyclient_address "${ip}"
+openstack-configure set /etc/nova/nova.conf vnc novncproxy_host \$my_ip
+openstack-configure set /etc/nova/nova.conf vnc novncproxy_port 6080
+openstack-configure set /etc/nova/nova.conf vnc novncproxy_base_url "http://${ip}:6080/vnc_auto.html"
+openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_host \$my_ip
+openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_port 6081
+openstack-configure set /etc/nova/nova.conf vnc xvpvncproxy_base_url "http://${ip}:6081/console"
 openstack-configure set /etc/nova/nova.conf rdp enabled false
+openstack-configure set /etc/nova/nova.conf rdp html5_proxy_base_url "http://${ctrlnode}:6083/"
 openstack-configure set /etc/nova/nova.conf spice html5proxy_host 0.0.0.0
 openstack-configure set /etc/nova/nova.conf spice html5proxy_port 6082
-openstack-configure set /etc/nova/nova.conf spice html5proxy_base_url http://${ip}:6082/spice_auto.html
+openstack-configure set /etc/nova/nova.conf spice html5proxy_base_url "http://${ctrlnode}}:6082/spice_auto.html"
 openstack-configure set /etc/nova/nova.conf spice server_listen 0.0.0.0
-openstack-configure set /etc/nova/nova.conf spice server_proxyclient_address \$my_ip
+openstack-configure set /etc/nova/nova.conf spice server_proxyclient_address "${ip}"
 openstack-configure set /etc/nova/nova.conf spice enabled true
 openstack-configure set /etc/nova/nova.conf spice agent_enabled true
+openstack-configure set /etc/nova/nova.conf xenserver block_device_creation_timeout 300
 ini_unset_value /etc/nova/nova.conf user_domain_id
 
 cp /etc/nova/nova-compute.conf /etc/nova/nova-compute.conf.orig
 openstack-configure set /etc/nova/nova-compute.conf DEFAULT neutron_ovs_bridge br-physical
+openstack-configure set /etc/nova/nova-compute.conf DEFAULT compute_driver nova.virt.libvirt.LibvirtDriver
 
 # ======================================================================
 # Setup Magnum.
@@ -284,6 +296,13 @@ openstack-configure set /etc/ceilometer/ceilometer.conf database metering_time_t
 openstack-configure set /etc/ceilometer/ceilometer.conf database event_time_to_live 7200
 
 # ======================================================================
+# Install the Nova Docker plugin.
+# NOTE: It's no longer maintained, so don't!
+#    curl -s http://${LOCALSERVER}/PXEBoot/install_nova_docker.sh > \
+#        /var/tmp/install_nova_docker.sh
+#    sh /var/tmp/install_nova_docker.sh
+
+# ======================================================================
 # Restart all changed servers
 /etc/init.d/openstack-services restart
 
@@ -291,6 +310,25 @@ openstack-configure set /etc/ceilometer/ceilometer.conf database event_time_to_l
 # Setup Open iSCSI.
 iscsiadm -m iface -I eth1 --op=new
 iscsiadm -m iface -I eth1 --op=update -n iface.vlan_priority -v 1
+
+# ======================================================================
+# Save our config file state.
+find /etc -name '*.orig' | \
+    while read file; do
+	f="$(echo "${file}" | sed 's@\.orig@@')"
+        cp "${f}" "${f}.save0" # Initial install states
+        cp "${f}" "${f}.save"
+done
+
+# ======================================================================
+# ======== EVERYTHING BELOW IS ONLY DONE ON THE FIRST HYPERVISOR =======
+# ======================================================================
+
+# ======================================================================
+# Check if this is the n'th hypervisor.
+hypervisors="$(openstack hypervisor list --format csv --column ID \
+    --quote none | grep -v ^ID | grep '^[0-9]' | wc -l)"
+[ "${hypervisors}" -ge 1 ] && exit 0
 
 # ======================================================================
 # Add this host to all the host aggregates.
@@ -303,15 +341,64 @@ openstack aggregate list --format csv --column Name --quote none | \
 
 # ======================================================================
 # Create some Senlin (AutoScalingGroup) examples
-curl -s http://server.domain.tld/PXEBoot/test-stack3.yml > /root/test-stack3.yml
+curl -s http://${LOCALSERVER}/PXEBoot/test-stack3.yml > /root/test-stack3.yml
 senlin profile-create -s /root/test-stack3.yml cirros
 senlin cluster-create -p cirros -c 5 cirros5
 
 # ======================================================================
-# Save our config file state.
-find /etc -name '*.orig' | \
-    while read file; do
-	f="$(echo "${file}" | sed 's@\.orig@@')"
-        cp "${f}" "${f}.save0" # Initial install states
-        cp "${f}" "${f}.save"
-done
+# Setup a test Heat stack. Trove depends on a working Heat.
+netid="$(openstack network list --format csv --column ID --column Name \
+    --quote none | grep tenant-98 | sed 's@,.*@@')"
+
+heat stack-create -r -u http://${LOCALSERVER}/PXEBoot/test-stack.yml \
+  -P "NetID=${netid}" test-stack
+
+# ======================================================================
+# Setup a test database in Trove - DataBase as a Service
+
+# ----------------------------------------------------------------------
+# Import DB images into Glance (Image Service).
+cd /var/tmp/Images
+#wget http://tarballs.openstack.org/trove/images/ubuntu/mysql.qcow2
+wget http://${LOCALSERVER}/PXEBoot/Images/mysql.qcow2
+glance image-create --name trove/mysql --visibility public \
+    --container-format ovf --disk-format qcow2 \
+    --owner trove --file mysql.qcow2
+set -- $(glance image-list | grep trove/mysql)
+img1="${2}"
+
+#wget http://tarballs.openstack.org/trove/images/ubuntu/mongodb.qcow2
+wget http://${LOCALSERVER}/PXEBoot/Images/mongodb.qcow2
+glance image-create --name trove/mongodb --visibility public \
+    --container-format ovf --disk-format qcow2 \
+    --owner trove --file mongodb.qcow2
+set -- $(glance image-list | grep trove/mongodb)
+img2="${2}"
+
+# ----------------------------------------------------------------------
+# Setup Trove datastores.
+trove-manage datastore_update mysql ""
+trove-manage datastore_version_update mysql 5.6 mysql "${img1}" \
+    mysql-server-5.6 1
+trove-manage datastore_update mysql 5.6
+trove-manage db_load_datastore_config_parameters mysql 5.6 \
+    /usr/lib/python2.7/dist-packages/trove/templates/mysql/validation-rules.json
+
+trove-manage datastore_update mongodb ""
+trove-manage datastore_version_update mongodb 2.4 mongodb "${img2}" \
+    mongodb-server 1
+trove-manage datastore_update mongodb 2.4
+trove-manage db_load_datastore_config_parameters mongodb 2.4 \
+    /usr/lib/python2.7/dist-packages/trove/templates/mongodb/validation-rules.json
+
+# ----------------------------------------------------------------------
+# Create a example database - MySQL
+flavor="$(openstack flavor list --column ID --column Name \
+    --format csv --quote none | grep m2.2small | sed 's@,.*@@')"
+
+# TODO: !! Verify !!
+# http://docs.openstack.org/cli-reference/trove.html
+#trove create testdb "${flavor}" --size 2 --volume_type lvm \
+#    --availability_zone nova --nic "net-id=${netid}" \
+#    --databases=test1 --users test1:TEST1 \
+#    --datastore mysql --datastore_version 5.6
