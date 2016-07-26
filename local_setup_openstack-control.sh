@@ -13,6 +13,18 @@ ini_unset_value () {
     sed -i "s@^\(${value}[ \t]\)=.*@#\1 = <None>@" "${file}"
 }
 
+get_net_id () {
+    neutron net-list --format csv --column id --column name --quote none | \
+        grep "${1}" | \
+        sed 's@,.*@@'
+}
+
+get_subnet_id () {
+    neutron subnet-list --format csv --column id --column name --quote none | \
+        grep "${1}" | \
+        sed 's@,.*@@'
+}
+
 if [ ! -e "/root/admin-openrc" ]; then
     echo "The /root/admin-openrc file don't exists."
     exit 1
@@ -24,6 +36,9 @@ else
         exit 1
     fi
 fi
+
+# Get the last part of the IP - 'ip' set in admin-openrc.
+ipnr="$(echo "${ip}" | sed 's@.*\.@@')"
 
 set -xe
 
@@ -44,19 +59,24 @@ chmod +x /usr/local/bin/openstack-configure
 curl -s http://${LOCALSERVER}/PXEBoot/backup_openstack_databases.sh > \
     /usr/local/sbin/backup_openstack_databases.sh
 chmod +x /usr/local/sbin/backup_openstack_databases.sh
-ln -s /usr/local/sbin/backup_openstack_databases.sh /etc/cron.daily/
+ln -s /usr/local/sbin/backup_openstack_databases.sh /etc/cron.daily/backup_openstack_databases
 
 # Get the script to backup config files.
 curl -s http://${LOCALSERVER}/PXEBoot/backup_openstack_config.sh > \
     /usr/local/sbin/backup_openstack_configs.sh
 chmod +x /usr/local/sbin/backup_openstack_configs.sh
-ln -s /usr/local/sbin/backup_openstack_configs.sh /etc/cron.daily/
+ln -s /usr/local/sbin/backup_openstack_configs.sh /etc/cron.daily/backup_openstack_configs
 
 # Get a script to cleanup old, dead hosts.
 curl -s http://${LOCALSERVER}/PXEBoot/clean_dead_hosts.sh > \
     /usr/local/sbin/clean_dead_hosts.sh
 chmod +x /usr/local/sbin/clean_dead_hosts.sh
-ln -s /usr/local/sbin/clean_dead_hosts.sh /etc/cron.daily/
+ln -s /usr/local/sbin/clean_dead_hosts.sh /etc/cron.daily/clean_dead_hosts
+
+# Get a script to fix max_connections in MySQL.
+curl -s http://${LOCALSERVER}/PXEBoot/mysql-increase_max_con.sh > \
+    /usr/local/sbin/mysql-increase_max_con.sh
+chmod +x /usr/local/sbin/mysql-increase_max_con.sh
 
 # Get a wrapper script to restart everything.
 curl -s http://${LOCALSERVER}/PXEBoot/openstack-services > \
@@ -151,7 +171,7 @@ openstack-configure set /etc/keystone/keystone.conf database db_max_retries 20
 openstack-configure set /etc/keystone/keystone.conf oslo_messaging_rabbit rabbit_host "${ctrlnode}"
 openstack-configure set /etc/keystone/keystone.conf oslo_messaging_rabbit rabbit_userid openstack
 openstack-configure set /etc/keystone/keystone.conf oslo_messaging_rabbit rabbit_password "${rabbit_pass}"
-#openstack-configure set /etc/keystone/keystone.conf ldap url ldap://server.domain.tld
+#openstack-configure set /etc/keystone/keystone.conf ldap url ldap://${LOCALSERVER}
 #openstack-configure set /etc/keystone/keystone.conf ldap suffix c=SE
 #openstack-configure set /etc/keystone/keystone.conf ldap use_dumb_member true
 #openstack-configure set /etc/keystone/keystone.conf ldap dumb_member cn=dumb,dc=nonexistent
@@ -181,6 +201,16 @@ openstack-configure set /etc/designate/designate.conf network_api:neutron admin_
 openstack-configure set /etc/designate/designate.conf network_api:neutron auth_url "http://${ctrlnode}:35357/v2.0"
 openstack-configure set /etc/designate/designate.conf network_api:neutron admin_tenant_name service
 openstack-configure set /etc/designate/designate.conf network_api:neutron auth_strategy keystone
+openstack-configure set /etc/designate/designate.conf service:pool_manager cache_driver memcache
+
+# https://bugs.launchpad.net/designate/+bug/1604043
+openstack-configure set /etc/designate/designate.conf service:api enable_api_v2 True
+openstack endpoint list --format csv --colum ID --column URL --quote none | \
+    grep 9001 | \
+    sed 's@,.*@@' | \
+    while read endpoint; do
+	openstack endpoint set --url http://10.0.4.1:9001/ "${endpoint}"
+    done
 
 # Configure Manila.
 cp /etc/manila/manila.conf /etc/manila/manila.conf.orig
@@ -195,14 +225,37 @@ openstack-configure set /etc/manila/manila.conf DEFAULT memcached_servers "${ctr
 openstack-configure set /etc/manila/manila.conf DEFAULT my_ip "${ip}"
 openstack-configure set /etc/manila/manila.conf DEFAULT enabled_share_backends lvm
 openstack-configure set /etc/manila/manila.conf DEFAULT enabled_share_protocols NFS,CIFS
+openstack-configure set /etc/manila/manila.conf cinder auth_url "http://${ctrlnode}:8776/v2"
+openstack-configure set /etc/manila/manila.conf cinder password "$(get_debconf_value "openstack" "keystone/password/cinder")"
+openstack-configure set /etc/manila/manila.conf cinder project_domain_name default
+openstack-configure set /etc/manila/manila.conf cinder project_name service
+openstack-configure set /etc/manila/manila.conf cinder user_domain_name default
+openstack-configure set /etc/manila/manila.conf cinder username cinder
+openstack-configure set /etc/manila/manila.conf keystone_authtoken region_name europe-london
+openstack-configure set /etc/manila/manila.conf keystone_authtoken memcached_servers "${ctrlnode}:11211"
+openstack-configure set /etc/manila/manila.conf keystone_authtoken auth_port 35357
+openstack-configure set /etc/manila/manila.conf neutron auth_url "http://${ctrlnode}:9696/"
+openstack-configure set /etc/manila/manila.conf neutron password "${neutron_pass}"
+openstack-configure set /etc/manila/manila.conf neutron project_domain_name default
+openstack-configure set /etc/manila/manila.conf neutron project_name service
+openstack-configure set /etc/manila/manila.conf neutron user_domain_name default
+openstack-configure set /etc/manila/manila.conf neutron username neutron
+openstack-configure set /etc/manila/manila.conf nova auth_url "http://${ctrlnode}:8774/v2"
+openstack-configure set /etc/manila/manila.conf nova password "$(get_debconf_value "openstack" "keystone/password/nova")"
+openstack-configure set /etc/manila/manila.conf nova project_domain_name default
+openstack-configure set /etc/manila/manila.conf nova project_name service
+openstack-configure set /etc/manila/manila.conf nova user_domain_name domain
+openstack-configure set /etc/manila/manila.conf nova username nova
 cat <<EOF >> /etc/manila/manila.conf
 
+# http://docs.openstack.org/mitaka/config-reference/shared-file-systems/drivers/lvm-driver.html
 [lvm]
 share_backend_name = LVM
 share_driver = manila.share.drivers.lvm.LVMShareDriver
 driver_handles_share_servers = False
 lvm_share_volume_group = blade_center
 lvm_share_export_ip = 10.0.4.1
+lvm_share_helpers = CIFS=manila.share.drivers.helpers.CIFSHelperUserAccess, NFS=manila.share.drivers.helpers.NFSHelper
 EOF
 
 # Configure Nova.
@@ -280,8 +333,11 @@ openstack-configure set /etc/nova/nova.conf rdp html5_proxy_base_url http://127.
 openstack-configure set /etc/nova/nova.conf rdp enabled true
 openstack-configure set /etc/nova/nova.conf spice html5proxy_host 0.0.0.0
 openstack-configure set /etc/nova/nova.conf spice html5proxy_port 6082
-openstack-configure set /etc/nova/nova.conf spice html5proxy_base_url http://127.0.0.1:6082/spice_auto.html
-openstack-configure set /etc/nova/nova.conf spice agent_enabled true
+openstack-configure set /etc/nova/nova.conf spice html5proxy_base_url "http://${ctrlnode}:6082/spice_auto.html"
+openstack-configure set /etc/nova/nova.conf spice html5proxy_base_url "${ctrlnode}"
+openstack-configure set /etc/nova/nova.conf spice server_listen 0.0.0.0
+openstack-configure set /etc/nova/nova.conf spice enabled true
+openstack-configure set /etc/nova/nova.conf spice agent_enabled false
 ini_unset_value /etc/nova/nova.conf default_domain_name
 ini_unset_value /etc/nova/nova.conf domain_name
 
@@ -488,7 +544,8 @@ OLD="$(openstack-configure get /etc/neutron/neutron.conf DEFAULT service_plugins
 # TODO: !! Install and enable VPNaaS as soon as it's available !!
 openstack-configure set /etc/neutron/neutron.conf DEFAULT service_plugins \
     "${OLD:+${OLD},}lbaas,neutron.services.firewall.fwaas_plugin.FirewallPlugin"
-openstack-configure set /etc/neutron/neutron.conf DEFAULT dns_domain openstack.domain.tld
+openstack-configure set /etc/neutron/neutron.conf DEFAULT dns_domain openstack.domain.tld.
+openstack-configure set /etc/neutron/neutron.conf DEFAULT external_dns_driver designate
 openstack-configure set /etc/neutron/neutron.conf DEFAULT agent_down_time 120
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken auth_host openstack.domain.tld
 openstack-configure set /etc/neutron/neutron.conf keystone_authtoken auth_port 35357
@@ -511,13 +568,26 @@ openstack-configure set /etc/neutron/neutron.conf agent availability_zone nova
 openstack-configure set /etc/neutron/neutron.conf agent report_interval 60
 openstack-configure set /etc/neutron/neutron.conf database use_db_reconnect true
 ini_unset_value /etc/neutron/neutron.conf domain_name
+cat <<EOF >> /etc/neutron/neutron.conf
+
+# http://docs.openstack.org/mitaka/networking-guide/adv-config-dns.html
+[designate]
+url = http://openstack.domain.tld:9001/v2
+admin_auth_url = http://openstack.domain.tld:35357/v3
+admin_username = neutron
+admin_password = ${neutron_pass}
+admin_tenant_name = service
+allow_reverse_dns_lookup = False
+ipv4_ptr_zone_prefix_size = 24
+#ipv6_ptr_zone_prefix_size = 116
+EOF
 
 cp /etc/neutron/dhcp_agent.ini /etc/neutron/dhcp_agent.ini.orig
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT enable_isolated_metadata True
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT force_metadata True
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT enable_metadata_network False
-openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT dhcp_domain openstack.domain.tld
-openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT dnsmasq_dns_servers 10.0.0.254
+openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT dhcp_domain openstack.domain.tld.
+openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT dnsmasq_dns_servers 10.0.4.${ipnr}
 openstack-configure set /etc/neutron/dhcp_agent.ini DEFAULT ovs_integration_bridge br-provider
 
 cp /etc/neutron/l3_agent.ini /etc/neutron/l3_agent.ini.orig
@@ -554,6 +624,7 @@ touch /etc/neutron/metadata_agent.ini.orig
 cat <<EOF > /etc/neutron/metadata_agent.ini
 [DEFAULT]
 bind_port = 8775
+
 auth_url = http://${ctrlnode}:5000/v3
 auth_region = europe-london
 
@@ -569,6 +640,7 @@ metadata_proxy_shared_secret = $(get_debconf_value "neutron-metadata-agent" "neu
 
 metadata_workers = 16
 metadata_backlog = 4096
+
 cache_url = memory://?default_ttl=5
 
 verbose = True
@@ -585,7 +657,7 @@ cp /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugins/ml2/ml2_conf.ini.o
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini securitygroup firewall_driver iptables_hybrid
 OLD="$(openstack-configure get /etc/neutron/plugins/ml2/ml2_conf.ini ml2 type_drivers)"
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 type_drivers "${OLD:+${OLD},}vlan"
-openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 extension_drivers port_security
+openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2 extension_drivers port_security,dns
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_flat flat_networks external,infrastructure
 openstack-configure set /etc/neutron/plugins/ml2/ml2_conf.ini ml2_type_vlan network_vlan_ranges external:90:99,infrastructure:100:101
 OLD="$(openstack-configure get /etc/neutron/plugins/ml2/ml2_conf.ini ml2 tenant_network_types)"
@@ -649,30 +721,42 @@ openstack-configure set /etc/trove/trove.conf DEFAULT neutron_url "http://${ctrl
 openstack-configure set /etc/trove/trove.conf DEFAULT dns_auth_url "http://${ctrlnode}:5000/v2.0"
 #openstack-configure set /etc/trove/trove.conf DEFAULT dns_username ???
 #openstack-configure set /etc/trove/trove.conf DEFAULT dns_passkey ???
+openstack-configure set /etc/trove/trove.conf DEFAULT network_label_regex '.\*'
+openstack-configure set /etc/trove/trove.conf DEFAULT os_region_name europe-london
+openstack-configure set /etc/trove/trove.conf mysql root_on_create True
 
 cp /etc/trove/trove-taskmanager.conf /etc/trove/trove-taskmanager.conf.orig
-openstack-configure set /etc/trove/trove-taskmanager.conf database connection "mysql+pymysql://trove:${trove_pass}@${ctrlnode}/trove"
-openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT trove_auth_url "http://${ctrlnode}:5000/v2.0"
-openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT nova_compute_url "http://${ctrlnode}:8774/v2"
-openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT cinder_url "http://${ctrlnode}:8776/v1"
-openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT swift_url "http://${ctrlnode}:8080/v1/AUTH_"
-openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT neutron_url "http://${ctrlnode}:9696/"
-openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT nova_proxy_admin_pass \
-    "$(get_debconf_value "trove-api" "/keystone-admin-password")"
-openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT use_nova_server_volume True
+#openstack-configure set /etc/trove/trove-taskmanager.conf database connection "mysql+pymysql://trove:${trove_pass}@${ctrlnode}/trove"
+#openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT trove_auth_url "http://${ctrlnode}:35357/v2.0"
+#openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT nova_compute_url "http://${ctrlnode}:8774/v2"
+#openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT cinder_url "http://${ctrlnode}:8776/v2"
+##openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT swift_url "http://${ctrlnode}:8080/v1/AUTH_"
+#openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT neutron_url "http://${ctrlnode}:9696/"
+#openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT os_region_name europe-london
+#openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT nova_proxy_admin_pass \
+#    "$(get_debconf_value "trove-api" "/keystone-admin-password")"
+#openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT use_nova_server_volume True
+#openstack-configure set /etc/trove/trove-taskmanager.conf DEFAULT mount_point /var/lib/trove/mysql
+# TODO: Until the config file contain all relevant templates, just get the whole thing.
+curl -s http://${LOCALSERVER}/PXEBoot/trove-taskmanager.conf > /etc/trove/trove-taskmanager.conf
 
 cp /etc/trove/trove-conductor.conf /etc/trove/trove-conductor.conf.orig
 openstack-configure set /etc/trove/trove-conductor.conf DEFAULT trove_auth_url "http://${ctrlnode}:5000/v2.0"
 openstack-configure set /etc/trove/trove-conductor.conf database connection "mysql+pymysql://trove:${trove_pass}@${ctrlnode}/trove"
 
 cp /etc/trove/trove-guestagent.conf /etc/trove/trove-guestagent.conf.orig
-openstack-configure set /etc/trove/trove-guestagent.conf DEFAULT os_region_name europe-london
-openstack-configure set /etc/trove/trove-guestagent.conf DEFAULT swift_service_type object-store
-openstack-configure set /etc/trove/trove-guestagent.conf DEFAULT log_file trove.log
-sed -i "s@^\(\[DEFAULT\]\)@\[DEFAULT\]\\
-datastore_manager = mysql@"  /etc/trove/trove-guestagent.conf
+#openstack-configure set /etc/trove/trove-guestagent.conf DEFAULT os_region_name europe-london
+#openstack-configure set /etc/trove/trove-guestagent.conf DEFAULT swift_service_type object-store
+#openstack-configure set /etc/trove/trove-guestagent.conf DEFAULT log_file trove.log
+# TODO: Until the config file contain all relevant templates, just get the whole thing.
+curl -s http://${LOCALSERVER}/PXEBoot/trove-guestagent.conf > /etc/trove/trove-guestagent.conf
+
+touch /etc/trove/cloudinit/mysql.cloudinit.orig
+curl -s http://${LOCALSERVER}/PXEBoot/mysql.cloudinit > /etc/trove/cloudinit/mysql.cloudinit
 
 echo "trove ALL = NOPASSWD: ALL" > /etc/sudoers.d/trove
+mkdir /var/lib/trove/mysql /var/lib/trove/postgresql
+chown trove /var/lib/trove/mysql /var/lib/trove/postgresql
 
 # ======================================================================
 # Setup Swift.
@@ -699,6 +783,42 @@ cp /etc/senlin/senlin.conf /etc/senlin/senlin.conf.orig
 curl -s http://${LOCALSERVER}/PXEBoot/senlin.conf > /etc/senlin/senlin.conf
 
 # ======================================================================
+# Setup Heat.
+cp /etc/heat/heat.conf /etc/heat/heat.conf.orig
+openstack-configure set /etc/heat/heat.conf keystone_authtoken auth_version 3
+openstack-configure set /etc/heat/heat.conf keystone_authtoken region_name europe-london
+openstack-configure set /etc/heat/heat.conf keystone_authtoken memcached_servers "${ctrlnode}:11211"
+openstack-configure set /etc/heat/heat.conf keystone_authtoken auth_port 35357
+openstack-configure set /etc/heat/heat.conf keystone_authtoken auth_uri "http://${ctrlnode}:5000/v3"
+# TODO: Until "heat-api-cfn" does 'the right thing':
+#openstack-configure set /etc/heat/heat.conf DEFAULT heat_metadata_server_url "http://${ctrlnode}:8000"
+#openstack-configure set /etc/heat/heat.conf DEFAULT heat_waitcondition_server_url http://${ctrlnode}:8000/v1/waitcondition
+sed -i "s@^\(\[DEFAULT\]\)@\[DEFAULT\]\\
+heat_metadata_server_url = http://${ctrlnode}:8000\\
+heat_waitcondition_server_url = http://${ctrlnode}:8000/v1/waitcondition@" \
+    /etc/heat/heat.conf
+
+REGION_NAME="europe-london"
+SERVICE_NAME="heat-cfn"
+SERVICE_DESC="Orchestration CloudFormation"
+SERVICE_TYPE="cloudformation"
+PKG_ENDPOINT_IP="10.0.4.1"
+SERVICE_PORT="8000"
+SERVICE_URL="/v1"
+
+openstack service create --name=${SERVICE_NAME} --description="${SERVICE_DESC}" ${SERVICE_TYPE}
+
+openstack endpoint create --region "${REGION_NAME}" ${SERVICE_NAME} public   http://${PKG_ENDPOINT_IP}:${SERVICE_PORT}${SERVICE_URL}
+openstack endpoint create --region "${REGION_NAME}" ${SERVICE_NAME} internal http://${PKG_ENDPOINT_IP}:${SERVICE_PORT}${SERVICE_URL}
+openstack endpoint create --region "${REGION_NAME}" ${SERVICE_NAME} admin    http://${PKG_ENDPOINT_IP}:${SERVICE_PORT}${SERVICE_URL}
+
+sed -i "s@Instance: m1.small@Instance: m1.3small@" AWS_RDS_DBInstance.yaml
+sed -i "s@Instance: m1.large@Instance: m1.5large@" AWS_RDS_DBInstance.yaml
+sed -i "s@Instance: m1.xlarge@Instance: m1.6xlarge@" AWS_RDS_DBInstance.yaml
+sed -i "s@Instance: m2.xlarge@Instance: m2.4large@" AWS_RDS_DBInstance.yaml
+sed -i "s@Instance: m2.2xlarge@Instance: m2.5xlarge@" AWS_RDS_DBInstance.yaml
+
+# ======================================================================
 # Setup MongoDB.
 cp /etc/mongodb.conf /etc/mongodb.conf.orig
 sed -i "s@^bind_ip[ \t].*@bind_ip = 0.0.0.0@" /etc/mongodb.conf
@@ -712,9 +832,44 @@ mongo --host "${ctrlnode}" --eval "
   roles: [ \"readWrite\", \"dbAdmin\" ]})"
 
 # ======================================================================
+# Create a RNDC key for Designate.
+rndc-confgen -a -b 512 -c /etc/designate/rndc.key -k designate-key -u designate
+
+# Make sure 'bind' group can access the key.
+chown designate:bind /etc/designate/rndc.key
+chmod 640 /etc/designate/rndc.key
+chgrp bind /etc/designate
+chmod g=rx /etc/designate
+
+# Setup Bind9.
+cp /etc/bind/named.conf.options /etc/bind/named.conf.options.orig
+cat <<EOF > /etc/bind/named.conf.options
+options {
+	directory "/var/cache/bind";
+	forwarders {
+		10.0.0.254;
+	};
+	dnssec-validation auto;
+	auth-nxdomain no; # conform to RFC1035
+	listen-on-v6 { any; };
+	allow-new-zones yes;
+	request-ixfr no;
+	recursion no;
+};
+
+include "/etc/designate/rndc.key";
+
+controls {
+        inet 127.0.0.1 allow { localhost; } keys { "designate-key"; };
+        inet 10.0.4.${ipnr}  allow { localhost; } keys { "designate-key"; };
+};
+EOF
+
+# ======================================================================
 # Restart all changed servers
 # NOTE: Need to do this before we create networks etc.
 /etc/init.d/openstack-services restart
+service bind9 restart
 
 # ======================================================================
 # Sync/upgrade the database to create the missing tables for LBaaSv2.
@@ -751,7 +906,6 @@ openstack volume type create --description "Local LVM volumes" --public lvm
 openstack volume type create --description "Local NFS volumes" --public nfs
 openstack volume type set --property volume_backend_name=LVM lvm
 openstack volume type set --property volume_backend_name=NFS nfs
-# TODO: ?? Create (more) extra spec key-value pairs for these ??
 
 # ======================================================================
 # Setup Open iSCSI.
@@ -774,25 +928,15 @@ neutron subnet-create --name subnet-physical --dns-nameserver 10.0.0.254 \
     physical 10.0.0.0/16
 
 # ----------------------------------------------------------------------
-# Setup the tenant network 97.
-neutron net-create --shared --provider:network_type gre --availability-zone-hint \
-    nova tenant-97
-neutron subnet-create --name subnet-97 --dns-nameserver 10.0.0.254 \
-    --enable-dhcp --ip-version 4 --gateway 10.97.0.1 tenant-97 10.97.0.0/24
+# Setup the tenant networks.
+for net in 97 98 99; do
+    neutron net-create "tenant-${net}" --shared --provider:network_type gre \
+        --availability-zone-hint nova
 
-# ----------------------------------------------------------------------
-# Setup the tenant network 98.
-neutron net-create --shared --provider:network_type gre --availability-zone-hint \
-    nova tenant-98
-neutron subnet-create --name subnet-98 --dns-nameserver 10.0.0.254 \
-    --enable-dhcp --ip-version 4 --gateway 10.98.0.1 tenant-98 10.98.0.0/24
-
-# ----------------------------------------------------------------------
-# Setup the tenant network 99.
-neutron net-create --shared --provider:network_type gre --availability-zone-hint \
-    nova tenant-99
-neutron subnet-create --name subnet-99 --dns-nameserver 10.0.0.254 \
-    --enable-dhcp --ip-version 4 --gateway 10.99.0.1 tenant-99 10.99.0.0/24
+    neutron subnet-create --name "subnet-${net}" --dns-nameserver 10.0.0.254 \
+        --enable-dhcp --ip-version 4 --gateway "10.${net}.0.1" \
+        "tenant-${net}" "10.${net}.0.0/24"
+done
 
 # ----------------------------------------------------------------------
 # Setup network routers.
@@ -803,22 +947,13 @@ neutron subnet-create --name subnet-99 --dns-nameserver 10.0.0.254 \
 neutron router-create --distributed False --ha False provider-tenants
 
 # ----------------------------------------------------------------------
-# Router port on the provider network 'tenant-97'.
-neutron port-create --name port-tenant97 --vnic-type normal \
-    --fixed-ip ip_address=10.97.0.1 tenant-97
-neutron router-interface-add provider-tenants port=port-tenant97
+# Create router port on the provider networks.
+for net in 97 98 99; do
+    neutron port-create --name "port-tenant${net}" --vnic-type normal \
+        --fixed-ip ip_address="10.${net}.0.1" "tenant-${net}"
 
-# ----------------------------------------------------------------------
-# Router port on the provider network 'tenant-98'.
-neutron port-create --name port-tenant98 --vnic-type normal \
-    --fixed-ip ip_address=10.98.0.1 tenant-98
-neutron router-interface-add provider-tenants port=port-tenant98
-
-# ----------------------------------------------------------------------
-# Router port on the provider network 'tenant-99'.
-neutron port-create --name port-tenant99 --vnic-type normal \
-    --fixed-ip ip_address=10.99.0.1 tenant-99
-neutron router-interface-add provider-tenants port=port-tenant99
+    neutron router-interface-add provider-tenants port="port-tenant${net}"
+done
 
 # ----------------------------------------------------------------------
 # Set the routers default route to external gateway.
@@ -863,13 +998,13 @@ neutron lb-healthmonitor-create --type PING --timeout 15 --delay 15 \
 # ----------------------------------------------------------------------
 # Create a VIP port on the loadbalancers
 # NOTE: Can't load balance ssh: WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED
-#neutron lb-vip-create --address 10.97.0.254 --name vip-97 \
-#    --protocol-port 22 --protocol TCP --subnet-id subnet-97 hapool-97
-#neutron lb-vip-create --address 10.98.0.253 --name vip-98 \
-#    --protocol-port 22 --protocol TCP --subnet-id subnet-98 hapool-98
-#neutron lb-vip-create --address 10.99.0.252 --name vip-99 \
-#    --protocol-port 22 --protocol TCP --subnet-id subnet-99 hapool-99
-#
+neutron lb-vip-create --address 10.97.0.254 --name vip-97 \
+    --protocol-port 22 --protocol TCP --subnet-id subnet-97 hapool-97
+neutron lb-vip-create --address 10.98.0.254 --name vip-98 \
+    --protocol-port 22 --protocol TCP --subnet-id subnet-98 hapool-98
+neutron lb-vip-create --address 10.99.0.254 --name vip-99 \
+    --protocol-port 22 --protocol TCP --subnet-id subnet-99 hapool-99
+
 # ----------------------------------------------------------------------
 # TODO: Add instance(s) to the member list of the hapool.
 # NOTE: Can't be done automatic - need to have running instances.
@@ -916,9 +1051,10 @@ neutron firewall-policy-create --shared --firewall-rules "${rules}" \
 
 # ----------------------------------------------------------------------
 # Create a FWaaS firewall.
-# TODO: !! Need to figure out exactly how to use it and if it works with SGs !!
-# NOTE: Create the firewall, but don't bind it to a router (just yet).
 neutron firewall-create --name firewall-tenants --no-routers firewall-policy
+
+# TODO: !! Don't bind the firewall it to a router !!
+# NOTE: Need to figure out exactly how to use it and if it works with SGs
 #neutron firewall-update --router provider-tenants firewall-tenants
 
 # ======================================================================
@@ -982,9 +1118,15 @@ clean_security_group() {
 }
 
 # Modify the default security group to allow everything.
-clean_security_group default
+secgrp="$(neutron security-group-list --column id --column name --format csv --quote none | \
+    grep default | sed 's@,.*@@')"
+clean_security_group "${secgrp}"
 neutron security-group-rule-create --direction egress --protocol tcp --port-range-min  80 \
-    --port-range-max 80 --remote-ip-prefix 169.254.169.254/32 default
+    --port-range-max 80 --remote-ip-prefix 0.0.0.0/0 "${secgrp}"
+neutron security-group-rule-create --direction egress --protocol tcp --port-range-min  53 \
+    --port-range-max 53 --remote-ip-prefix 0.0.0.0/0 "${secgrp}"
+neutron security-group-rule-create --direction egress --protocol udp --port-range-min  53 \
+    --port-range-max 53 --remote-ip-prefix 0.0.0.0/0 "${secgrp}"
 
 openstack security group create --description "Allow all incoming and outgoing connections." all
 clean_security_group all
@@ -1066,9 +1208,18 @@ rm /var/tmp/id_rsa.pub
 
 # ======================================================================
 # Update the default quota.
-openstack quota set --key-pairs 2 --fixed-ips 2 --floating-ips 2 \
-    --volumes 10 --snapshots 10 --ram 512 --injected-files 10 \
-    --gigabytes 100 --secgroups 20 --secgroup-rules 5 default
+for proj in default $(openstack project list --column ID --format csv \
+    --quote none | grep -v ^ID)
+do
+    openstack quota set --key-pairs 5 --fixed-ips 20 --floating-ips 50 \
+        --volumes 50 --snapshots 10 --ram 10240 --injected-files 10 \
+        --gigabytes 100 --secgroups 50 --secgroup-rules 50 --instances 30 \
+        "${proj}"
+
+    neutron quota-update --tenant-id "${proj}" --network 5 --subnet 10 \
+        --port 50 --router 2 --floatingip 200 --security-group 50 \
+        --security-group-rule 50 --vip 50 --health-monitor 50
+done
 
 # ======================================================================
 # Create some host aggregates. Might be nice to have. Eventually. Maybe.
@@ -1084,6 +1235,44 @@ while [ "${i}" -le 19 ]; do
     openstack ip floating create physical
     i="$(expr "${i}" + 1)"
 done
+
+# ======================================================================
+# Setup Designate pool and zone.
+curl -s http://${LOCALSERVER}/PXEBoot/designate-pool.yaml | \
+    sed "s@%NR%@${ipnr}@" > /var/tmp/designate-pool.yaml
+designate-manage pool update --file /var/tmp/designate-pool.yaml
+
+designate domain-create --name openstack.domain.tld. \
+    --email dnsadmin@openstack.domain.tld
+domain_id="$(designate domain-list --format csv --column id --quote none | grep -v ^id)"
+designate record-create --name ns${ipnr} --type NS \
+    --data ns${ipnr}.openstack.domain.tld. openstack.domain.tld.
+designate record-create --name ns${ipnr} --type A --data 10.0.4.${ipnr} \
+    openstack.domain.tld.
+designate record-create --name openstack.domain.tld. --type A \
+    --data 10.0.4.${ipnr} openstack.domain.tld.
+for net in physical tenant-97 tenant-98 tenant-99; do
+    neutron net-update --dns-domain openstack.domain.tld. "${net}"
+done
+
+# ======================================================================
+# Setup Manila (Shared File System as a Service).
+manila type-create default_share_type False
+
+netid="$(get_net_id "tenant-97")"
+subnetid="$(get_subnet_id "subnet-97")"
+
+manila share-network-create --name "network-97" \
+    --neutron-net-id "${netid}" --neutron-subnet-id "${subnetid}" \
+    --share-type default_share_type #--metadata volume_backend_name=LVM
+
+manila create NFS 2 --public --name "share-97" \
+    --availability-zone nova --share-type default_share_type
+sleep 5
+manila access-allow "share-97" ip 0.0.0.0/0 --access-level rw
+
+# Just for posterity..
+manila share-export-location-list "share-${net}"
 
 # ======================================================================
 # Setup Cinder-NFS.
@@ -1168,15 +1357,6 @@ nohup sh -x /var/tmp/install_images.sh > \
     /var/tmp/install_images.log 2>&1 &
 
 # ======================================================================
-# TODO: Disable some services that don't work at the moment.
-for service in trove-guestagent trove-taskmanager designate-pool-manager \
-    designate-central manila-share
-do
-    /etc/init.d/${service} stop
-    chmod -x /etc/init.d/${service}
-done
-
-# ======================================================================
 # Save our config file state.
 find /etc -name '*.orig' | \
     while read file; do
@@ -1184,5 +1364,3 @@ find /etc -name '*.orig' | \
         cp "${f}" "${f}.save0" # Initial install states
         cp "${f}" "${f}.save"
 done
-
-echo "=> W E ' R E   A L L   D O N E : $(date) <="
