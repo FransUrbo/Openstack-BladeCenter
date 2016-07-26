@@ -4,7 +4,7 @@ case "$1" in
      restart)
 	# Restart all Openstack servers.
         for init in \
-            /etc/init.d/{apache,designate,manila,nova,cinder,glance,neutron,magnum,zaqar,aodh,trove,mongodb,memcached,rabbitmq,senlin}*
+            /etc/init.d/{apache,mysql,mongodb,memcached,rabbitmq,bind9,designate,manila,nova,cinder,glance,neutron,magnum,zaqar,aodh,trove,senlin,heat,ironic,swift}*
         do
             [ -e "${init}" ] && ${init} restart
         done
@@ -13,7 +13,7 @@ case "$1" in
      start)
 	# Start all Openstack servers.
         for init in \
-            /etc/init.d/{apache,designate,manila,nova,cinder,glance,neutron,magnum,zaqar,aodh,trove,mongodb,memcached,rabbitmq,senlin}*
+            /etc/init.d/{apache,mysql,mongodb,memcached,rabbitmq,bind9,designate,manila,nova,cinder,glance,neutron,magnum,zaqar,aodh,trove,senlin,heat,ironic,swift}*
         do
             [ -e "${init}" ] && ${init} start
         done
@@ -22,7 +22,7 @@ case "$1" in
      stop)
 	# Stop all Openstack servers.
         for init in \
-            /etc/init.d/{apache,designate,manila,nova,cinder,glance,neutron,magnum,zaqar,aodh,trove,mongodb,memcached,rabbitmq,senlin}*
+            /etc/init.d/{apache,mysql,mongodb,memcached,rabbitmq,bind9,designate,manila,nova,cinder,glance,neutron,magnum,zaqar,aodh,trove,senlin,heat,ironic,swift}*
         do
             [ -e "${init}" ] && ${init} stop
         done
