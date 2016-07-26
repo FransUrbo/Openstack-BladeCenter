@@ -16,6 +16,7 @@ fi
 
 # ======================================================================
 # Remove the compute nodes no longer available.
+echo "Services: "
 nova-manage service list 2> /dev/null | \
     grep -v ^Binary | \
     grep 'XXX' | \
@@ -28,9 +29,11 @@ nova-manage service list 2> /dev/null | \
 done
 mysql --defaults-file=/etc/mysql/debian.cnf nova \
     -e "delete from services where host not like '0.0.0.0' and disabled=1"
+echo
 
 # ======================================================================
 # Remove hypervisors no longer available.
+echo "Hypervisors: "
 openstack hypervisor list | \
     egrep -v '^\+|ID' | \
     while read line; do
@@ -42,9 +45,11 @@ openstack hypervisor list | \
                   -e "delete from compute_nodes where hypervisor_hostname='${4}'"
         fi
     done
+echo
 
 # ======================================================================
 # Remove agents no longer available.
+echo "Agents: "
 neutron agent-list -c id -c host -c alive | \
     grep ' xxx ' | \
     while read line; do
