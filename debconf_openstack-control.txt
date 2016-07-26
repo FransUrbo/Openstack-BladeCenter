@@ -49,6 +49,9 @@ barbican-common	barbican/configure_db	boolean	true
 barbican-common	barbican/rabbit_host	string	openstack.domain.tld
 barbican-common	barbican/rabbit_password	password	secret09
 barbican-common	barbican/rabbit_userid	string	openstack
+bind9	bind9/start-as-user	string	bind
+bind9	bind9/run-resolvconf	boolean	false
+bind9	bind9/different-configuration-file	string	
 ceilometer-api	ceilometer/endpoint-ip	string	10.0.4.1
 ceilometer-api	ceilometer/keystone-admin-name	string	admin
 ceilometer-api	ceilometer/keystone-admin-password	password	secret40
