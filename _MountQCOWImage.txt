@@ -1,0 +1,5 @@
+1. modprobe nbd max_part=8
+2. qemu-nbd --connect=/dev/nbd0 /var/www/PXEBoot/Images/mysql.qcow2 
+3. mount /dev/nbd0p1 /mnt/disk1
+4. umount /mnt/disk1
+5. qemu-nbd --disconnect /dev/nbd0
